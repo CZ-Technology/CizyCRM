@@ -32,7 +32,7 @@ jobs:
           else
             ATRASADAS=$(echo "$UPSTREAM" | sed -n "/^${ULTIMA_NO_FORK}\$/q;p" | wc -l)
           fi
-          ALVO=$(echo "$UPSTREAM" | head -
+          ALVO=$(echo "$UPSTREAM" | head -1)
 
           echo "atrasadas=$ATRASADAS" >> "$GITHUB_OUTPUT"
           echo "alvo=$ALVO" >> "$GITHUB_OUTPUT"

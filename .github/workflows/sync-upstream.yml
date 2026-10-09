@@ -1,0 +1,45 @@
+name: Sync upstream (a cada 3 releases)
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # confere todo dia às 6h UTC
+  workflow_dispatch: {}    # permite rodar manualmente também
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decidir se é hora de sincronizar
+        id: decide
+        run: |
+          UPSTREAM=$(curl -s https://api.github.com/repos/melgarafael/DeskcommCRM/releases | jq -r '.[].tag_name')
+          ULTIMA_NO_FORK=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.tag_name // empty')
+
+          if [ -z "$ULTIMA_NO_FORK" ]; then
+            ATRASADAS=$(echo "$UPSTREAM" | wc -l)
+          else
+            ATRASADAS=$(echo "$UPSTREAM" | sed -n "/^${ULTIMA_NO_FORK}\$/q;p" | wc -l)
+          fi
+          ALVO=$(echo "$UPSTREAM" | head -1)
+
+          echo "atrasadas=$ATRASADAS" >> "$GITHUB_OUTPUT"
+          echo "alvo=$ALVO" >> "$GITHUB_OUTPUT"
+
+      - name: Sincronizar e publicar release no fork
+        if: steps.decide.outputs.atrasadas >= 3
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ALVO="${{ steps.decide.outputs.alvo }}"
+          git remote add upstream https://github.com/melgarafael/DeskcommCRM.git
+          git fetch upstream --tags
+          git merge "$ALVO" --ff-only || git merge "$ALVO" -m "Sync upstream $ALVO"
+          git push origin HEAD:main
+          gh release create "$ALVO" --title "$ALVO" --notes "Sincronizado automaticamente do upstream (melgarafael/DeskcommCRM)."

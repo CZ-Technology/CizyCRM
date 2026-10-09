@@ -45,6 +45,8 @@ jobs:
           ALVO="${{ steps.decide.outputs.alvo }}"
           git remote add upstream https://github.com/melgarafael/DeskcommCRM.git
           git fetch upstream --tags
-          git merge "$ALVO" --ff-only || gtream $ALVO"
+          if ! git merge "$ALVO" --ff-only; then
+            git merge "$ALVO" -m "sync upstream"
+          fi
           git push origin HEAD:main
-          gh release create "$ALVO" --titldo automaticamente do upstream(melgarafael/DeskcommCRM)."
+          gh release create "$ALVO" --title "$ALVO" --notes "Sincronizado do upstream"

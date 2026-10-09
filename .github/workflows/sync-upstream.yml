@@ -2,8 +2,8 @@ name: Sync upstream (a cada 3 releases)
 
 on:
   schedule:
-    - cron: '0 6 * * *'   # confere todo dia às 6h UTC
-  workflow_dispatch: {}    # permite rodar manualmente também
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -13,8 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+
+      - name: Configurar identidade do commit
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions[bot]"
 
       - name: Decidir se é hora de sincronizar
         id: decide
@@ -25,7 +28,7 @@ jobs:
           if [ -z "$ULTIMA_NO_FORK" ]; then
             ATRASADAS=$(echo "$UPSTREAM" | wc -l)
           else
-            ATRASADAS=$(echo "$UPSTREAM" | sed -n "/^${ULTIMA_NO_FORK}\$/q;p" | wc -l)
+            ATRASADAS=$(echo "$UPSTREAM" |$/q;p" | wc -l)
           fi
           ALVO=$(echo "$UPSTREAM" | head -1)
 
@@ -35,10 +38,10 @@ jobs:
       - name: Sincronizar e publicar release no fork
         if: steps.decide.outputs.atrasadas >= 3
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOK
         run: |
           ALVO="${{ steps.decide.outputs.alvo }}"
-          git remote add upstream https://github.com/melgarafael/DeskcommCRM.git
+          git remote add upstream https://mmCRM.git
           git fetch upstream --tags
           git merge "$ALVO" --ff-only || git merge "$ALVO" -m "Sync upstream $ALVO"
           git push origin HEAD:main

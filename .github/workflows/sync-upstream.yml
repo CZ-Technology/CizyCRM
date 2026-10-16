@@ -2,51 +2,145 @@ name: Sync upstream (a cada 3 releases)
 
 on:
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '17 6 * * *'
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Configurar identidade do commit
-        run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions[bot]"
-
-      - name: Decidir se é hora de sincronizar
+      - name: Contar releases estáveis desde a última sincronização
         id: decide
-        run: |
-          UPSTREAM=$(curl -s https://api.github.com/repos/melgarafael/DeskcommCRM/releases | jq -r '.[].tag_name')
-          ULTIMA_NO_FORK=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.tag_name // empty')
-
-          if [ -z "$ULTIMA_NO_FORK" ]; then
-            ATRASADAS=$(echo "$UPSTREAM" | wc -l)
-          else
-            ATRASADAS=$(echo "$UPSTREAM" | sed -n "/^${ULTIMA_NO_FORK}\$/q;p" | wc -l)
-          fi
-          ALVO=$(echo "$UPSTREAM" | head -1)
-
-          echo "atrasadas=$ATRASADAS" >> "$GITHUB_OUTPUT"
-          echo "alvo=$ALVO" >> "$GITHUB_OUTPUT"
-
-      - name: Sincronizar e publicar release no fork
-        if: steps.decide.outputs.atrasadas >= 3
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          FORK_REPO: ${{ github.repository }}
+        shell: bash
         run: |
-          ALVO="${{ steps.decide.outputs.alvo }}"
-          git remote add upstream https://github.com/melgarafael/DeskcommCRM.git
-          git fetch upstream --tags
-          if ! git merge "$ALVO" --ff-only; then
-            git merge "$ALVO" -m "sync upstream"
+          set -euo pipefail
+          releases_file="$(mktemp)"
+          gh api --paginate 'repos/melgarafael/DeskcommCRM/releases?per_page=100' \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            > "$releases_file"
+          mapfile -t releases < "$releases_file"
+          if (( ${#releases[@]} == 0 )); then
+            echo 'Nenhuma release estável encontrada no upstream.' >&2
+            exit 1
           fi
+          for tag in "${releases[@]}"; do
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Tag inesperada no upstream: $tag" >&2
+              exit 1
+            fi
+          done
+
+          # O fork ainda não tem releases; a VPS começou na v1.75.0.
+          baseline='v1.75.0'
+          latest="$(gh api "repos/$FORK_REPO/releases?per_page=1" --jq '.[0].tag_name // empty')"
+          if [[ -n "$latest" ]]; then baseline="$latest"; fi
+          if [[ ! "$baseline" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release-base inválida: $baseline" >&2
+            exit 1
+          fi
+
+          behind=0
+          found=false
+          for tag in "${releases[@]}"; do
+            if [[ "$tag" == "$baseline" ]]; then
+              found=true
+              break
+            fi
+            behind=$((behind + 1))
+          done
+          if [[ "$found" != true ]]; then
+            echo "Release-base $baseline não encontrada no upstream; parei sem sincronizar." >&2
+            exit 1
+          fi
+
+          echo "Releases novas desde $baseline: $behind"
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          echo "target=${releases[0]}" >> "$GITHUB_OUTPUT"
+          if (( behind >= 3 )); then
+            echo 'should_sync=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'should_sync=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sincronizar fork e publicar release
+        if: steps.decide.outputs.should_sync == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.decide.outputs.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.name 'github-actions[bot]'
+          git remote add upstream https://github.com/melgarafael/DeskcommCRM.git
+          git fetch --no-tags upstream "refs/tags/$TARGET:refs/remotes/upstream/release-target"
+
+          if ! git merge --no-commit --no-ff refs/remotes/upstream/release-target; then
+            mapfile -d '' -t unresolved < <(git diff --name-only --diff-filter=U -z)
+            if (( ${#unresolved[@]} == 0 )); then
+              echo 'O merge falhou sem conflitos de arquivo conhecidos.' >&2
+              exit 1
+            fi
+            for path in "${unresolved[@]}"; do
+              case "$path" in
+                .github/workflows/ci.yml|.github/workflows/e2e.yml|.github/workflows/publish-image.yml|.github/workflows/release.yml)
+                  if git cat-file -e "HEAD:$path" 2>/dev/null; then
+                    echo "Conflito inesperado em arquivo existente: $path" >&2
+                    exit 1
+                  fi
+                  git rm -- "$path"
+                  ;;
+                *)
+                  echo "Conflito requer revisão manual: $path" >&2
+                  exit 1
+                  ;;
+              esac
+            done
+          fi
+
+          if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
+            echo 'Ainda há conflitos; não vou publicar.' >&2
+            exit 1
+          fi
+          # O fork mantém apenas este workflow; evita ativar CI do upstream sem querer.
+          mapfile -t workflows < <(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml')
+          if [[ "${workflows[*]}" != '.github/workflows/sync-upstream.yml' ]]; then
+            printf 'Workflows inesperados após o merge: %s\n' "${workflows[*]}" >&2
+            exit 1
+          fi
+          git diff --cached --check
+          if git rev-parse --verify -q MERGE_HEAD >/dev/null; then
+            git commit -m "Sync upstream $TARGET"
+          fi
+
+          if git rev-parse -q --verify "refs/tags/$TARGET" >/dev/null; then
+            if [[ "$(git rev-parse "$TARGET^{commit}")" != "$(git rev-parse HEAD)" ]]; then
+              echo "A tag $TARGET já existe em outro commit; parei sem alterar a tag." >&2
+              exit 1
+            fi
+          else
+            git tag -a "$TARGET" -m "Fork sincronizado com $TARGET"
+          fi
+
           git push origin HEAD:main
-          gh release create "$ALVO" --title "$ALVO" --notes "Sincronizado do upstream"
+          git push origin "refs/tags/$TARGET"
+          if ! gh release view "$TARGET" >/dev/null 2>&1; then
+            gh release create "$TARGET" --verify-tag --title "$TARGET" \
+              --notes "Fork sincronizado com a release upstream $TARGET."
+          fi
+

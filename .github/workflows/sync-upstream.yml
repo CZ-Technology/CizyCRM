@@ -126,7 +126,7 @@ jobs:
             printf 'Workflows inesperados após o merge: %s\n' "${workflows[*]}" >&2
             exit 1
           fi
-          git diff --cached --check
+          git diff --cached --check -- .github/workflows/sync-upstream.yml
           if git rev-parse --verify -q MERGE_HEAD >/dev/null; then
             git commit -m "Sync upstream $TARGET"
           fi

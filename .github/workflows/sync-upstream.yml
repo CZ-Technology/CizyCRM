@@ -133,8 +133,11 @@ jobs:
 
           if git rev-parse -q --verify "refs/tags/$TARGET" >/dev/null; then
             if [[ "$(git rev-parse "$TARGET^{commit}")" != "$(git rev-parse HEAD)" ]]; then
-              echo "A tag $TARGET já existe em outro commit; parei sem alterar a tag." >&2
-              exit 1
+              mapfile -t after_tag < <(git diff --name-only "$TARGET^{commit}" HEAD)
+              if [[ "${after_tag[*]}" != '.github/workflows/sync-upstream.yml' ]]; then
+                echo "A tag $TARGET não corresponde ao código sincronizado; parei sem alterar a tag." >&2
+                exit 1
+              fi
             fi
           else
             git tag -a "$TARGET" -m "Fork sincronizado com $TARGET"

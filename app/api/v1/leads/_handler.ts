@@ -1,3 +1,4 @@
+import { guardServiceEffect } from "@/lib/atendimento/fronteira-server";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { idsDeContatosPessoais } from "@/app/api/v1/conversations/_handler";
@@ -232,10 +233,16 @@ async function recusaPessoalNaEscrita(
  * SQLSTATE `PT404`/`PT422` o contato ou responsável de fora da organização. As
  * guardas acima respondem antes; isto cobre a janela entre conferir e gravar
  * (um vínculo revogado nesse meio) com a MESMA resposta, e não um 500.
+ *
+ * `42501` é a policy de `crm_leads` (`fn_can_view_lead`) recusando a linha:
+ * quem grava não enxergaria o negócio depois de gravado — no modo "own" um
+ * Atendente nasce sem dono, e no "own_and_unassigned" um dono colega. É falta
+ * de permissão, não falha do sistema: 403, e não 500 "tente de novo", que
+ * tentar de novo nunca resolve.
  */
 function recusaDaGuardaDoBanco(
   ctx: HandlerCtx,
-  erro: { code?: string } | null,
+  erro: { code?: string; message?: string } | null,
 ): ApiError | null {
   if (erro?.code === "PT404") {
     return new ApiError(
@@ -253,6 +260,25 @@ function recusaDaGuardaDoBanco(
       undefined,
       ctx.requestId,
       traduzir("Responsável não é um atendente ativo desta organização.", ctx.idioma ?? "pt-BR"),
+    );
+  }
+  // Só a policy de `crm_leads`: o mesmo 42501 também é GRANT faltando numa
+  // função ou numa tabela que um gatilho alcança — defeito nosso, que tem de
+  // continuar 500 com a mensagem do banco, e não virar "visibilidade". A recusa
+  // de RLS nomeia a tabela entre aspas na mensagem em inglês, que é o
+  // lc_messages do Supabase (en_US); a de GRANT ("permission denied for table
+  // crm_leads") não. Num Postgres com mensagens em de, es ou fr as aspas mudam
+  // e a recusa cai no 500 antigo, que é a direção segura.
+  if (erro?.code === "42501" && erro.message?.includes('"crm_leads"')) {
+    return new ApiError(
+      403,
+      "forbidden",
+      undefined,
+      ctx.requestId,
+      traduzir(
+        "Sem permissão para salvar este negócio: pela visibilidade definida na organização, ele ficaria fora do que você pode ver.",
+        ctx.idioma ?? "pt-BR",
+      ),
     );
   }
   return null;
@@ -639,6 +665,7 @@ export async function createLeadHandler(
   const currency = input.currency ?? (await moedaDaOrganizacao(supabase, ctx.organization_id));
 
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? null);
+  await guardServiceEffect();
   const { data: lead, error: insErr } = await supabase
     .from("crm_leads")
     .insert({
@@ -669,6 +696,33 @@ export async function createLeadHandler(
 
   const recusaNoInsert = recusaDaGuardaDoBanco(ctx, insErr);
   if (recusaNoInsert) throw recusaNoInsert;
+
+  // ── A PERDA SEM MOTIVO NA PRÓPRIA CRIAÇÃO (issue #2743) ────────────────────
+  //
+  // Nascer numa etapa de perda é o ÚNICO caminho de escrita em que este
+  // handler chega ao trigger `fn_validate_lost_reason_required` sem ter
+  // perguntado nada: o arrasto, o move, o bulk, o encerramento e o `/lose`
+  // decidem `decideMotivoDaPerda` ANTES de escrever, e aqui não há
+  // `lost_reason` no corpo (`CreateLeadInput` nem o declara). O trigger levanta
+  // `22023` — e sem esta linha o catch-all logo abaixo entregava 500
+  // `internal_error` com a mensagem crua do banco, que o Sentry conta como
+  // defeito interno (#2743, medido na prova do #2713).
+  //
+  // É a MESMA rede de segurança que `moveLeadHandler`, `bulk`, `encerramento`
+  // e o arrasto já usam — uma pergunta, uma resposta: a recusa do banco vira
+  // recusa de NEGÓCIO (422 `lost_reason_required`, frase traduzida), e um erro
+  // de banco de outra classe segue intocado no 500.
+  const recusaDeMotivoNoInsert = recusaDeMotivoDaPerdaPeloBanco(insErr, ctx.idioma);
+  if (recusaDeMotivoNoInsert) {
+    throw new ApiError(
+      422,
+      recusaDeMotivoNoInsert.codigo,
+      undefined,
+      ctx.requestId,
+      recusaDeMotivoNoInsert.mensagem,
+    );
+  }
+
   if (insErr || !lead) {
     throw new ApiError(
       500,
@@ -851,6 +905,7 @@ export async function updateLeadHandler(
   const tagServiceOrigin = input.tags !== undefined
     ? ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, input.contact_id ?? existing.contact_id)
     : null;
+  await guardServiceEffect();
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
     .update(patch)
@@ -1250,6 +1305,7 @@ export async function moveLeadHandler(
 
   const serviceOrigin = ctx.serviceOrigin ?? await observeServiceOrigin(createAdminClient(), ctx.organization_id, lead.contact_id);
   const nowIso = new Date().toISOString();
+  await guardServiceEffect();
   const { data: updated, error: updErr } = await supabase
     .from("crm_leads")
     .update({

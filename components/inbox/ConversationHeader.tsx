@@ -34,6 +34,7 @@ import { useResumeAiAttendance } from "@/hooks/inbox/useResumeAiAttendance";
 import { usePauseAiAttendance } from "@/hooks/inbox/usePauseAiAttendance";
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
+import { FaixaDaCarteira } from "@/components/inbox/FaixaDaCarteira";
 import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conversa";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
@@ -43,6 +44,7 @@ import { motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { rotuloDoCanalDaConversa } from "@/lib/channels/estado";
 
 interface Props {
   conversation: ConversationWithContact;
@@ -110,6 +112,11 @@ export function ConversationHeader({
 
   const c = conversation.contacts ?? null;
   const displayName = rotuloDoContato(c, t);
+  /**
+   * POR ONDE ESTA CONVERSA ENTROU — o mesmo rótulo da lista e da tela de
+   * canais (#2383). `null` quando não há canal, e aí o badge não existe.
+   */
+  const rotuloCanal = rotuloDoCanalDaConversa(conversation.channel_sessions, t);
   const phone = c?.phone_number ? phoneForDisplay(c.phone_number) : null;
   const status = conversation.status;
   const isMineAssigned = conversation.assigned_to_user_id === user.id;
@@ -203,7 +210,21 @@ export function ConversationHeader({
     // de antes (uma linha), e quando aperta a barra desce para a linha de baixo.
     // Nenhuma ação some — um menu "mais" esconderia o "Lembrar" que a spec
     // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-3">
+    //
+    // NO CELULAR a quebra vira o problema oposto: com ~390px de largura a barra
+    // descia em três ou quatro fileiras de botões e comia metade da tela,
+    // deixando quase nada para as mensagens. Abaixo do `md` a barra é UMA
+    // fileira que rola na horizontal — a mesma régua de não esconder ação, sem
+    // pagar em altura. `py-2` pelo mesmo motivo: cada pixel de altura ali é
+    // tirado da conversa.
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-background px-3 py-2 md:gap-3 md:px-4 md:py-3">
+      {/* FAIXA DA CARTEIRA (#2591, regra 2): "este cliente pertence à carteira de
+          A". `w-full` a põe numa linha própria acima da identidade, sem disputar
+          espaço com a barra de ações — a faixa só existe quando o dono é OUTRA
+          pessoa (o componente decide; sem carteira ele não desenha nada). */}
+      {c?.id && (
+        <FaixaDaCarteira contactId={c.id} quemAtendeId={conversation.assigned_to_user_id} />
+      )}
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5">
           <ChannelLogo channel={conversation.channel_sessions} size={20} />
@@ -218,6 +239,31 @@ export function ConversationHeader({
             provider={conversation.channel_sessions?.provider ?? null}
             lastInboundAt={conversation.last_inbound_at}
           />
+          {/* #2383: O CANAL DESTA CONVERSA, NO CABEÇALHO — a acepção que faltava
+              da issue: a lista já dizia por onde a conversa entrou, a conversa
+              ABERTA não dizia. O logo ao lado nomeia o provedor, não o número:
+              com "Peças" e "Vendas" conectados, ele é idêntico nos dois casos.
+
+              O TEXTO é o mesmo da lista e da tela `/app/connections`
+              (`rotuloDoCanalDaConversa` → `nomeDoCanal`): uma segunda cadeia de
+              regras aqui seria como as leituras de "quem manda" divergiram —
+              três telas, um fato, uma fonte.
+
+              `max-w` + `truncate` respondem ao critério de aceite "layout
+              utilizável com nomes de canal maiores": o badge encolhe e o `title`
+              devolve o texto inteiro. Sem canal (grupo, conversa sem sessão,
+              não-WA) não há rótulo nenhum e esta barra fica exatamente como
+              estava — o badge é acréscimo, não substituição. */}
+          {rotuloCanal && (
+            <Badge
+              variant="outline"
+              className="h-4 min-w-0 max-w-[9rem] truncate px-1.5 text-[10px]"
+              title={`${t("Entrou por")} ${rotuloCanal}`}
+              data-testid="canal-da-conversa"
+            >
+              <span className="truncate">{rotuloCanal}</span>
+            </Badge>
+          )}
         </div>
 
         {/* QUEM ESTÁ NO COMANDO, com nome e por GEOMETRIA — disco cheio para
@@ -250,8 +296,8 @@ export function ConversationHeader({
           (#1625): na linha do nome ele alargava a identidade e empurrava a
           barra inteira para baixo. Ela também não é `shrink-0`, pelo mesmo
           motivo da barra. */}
-      <div className="flex min-w-0 flex-col items-end gap-1">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <div className="flex min-w-0 flex-col items-end gap-1 max-md:w-full max-md:items-stretch">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1 max-md:[&>*]:shrink-0">
         {/* Primeira da barra e sem rótulo escrito: é ferramenta de LEITURA, não
             ação de atendimento, e não muda de lugar com o estado da conversa.
             Só o ícone porque a barra já quebrou a caixa útil em 1280px uma vez

@@ -142,8 +142,8 @@ jobs:
 
           git push origin HEAD:main
           git push origin "refs/tags/$TARGET"
-          if ! gh release view "$TARGET" >/dev/null 2>&1; then
-            gh release create "$TARGET" --verify-tag --title "$TARGET" \
+          if ! gh release view "$TARGET" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TARGET" -R "$GITHUB_REPOSITORY" --verify-tag --title "$TARGET" \
               --notes "Fork sincronizado com a release upstream $TARGET."
           fi
 

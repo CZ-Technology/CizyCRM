@@ -19,3 +19,9 @@ export function nomeDeArquivoLimpo(bruto: unknown): string | null {
     .trim();
   return nome ? nome : null;
 }
+
+/** Nome de documento de saída: impede separadores de caminho no anexo. */
+export function nomeDeArquivoParaEnvio(bruto: unknown): string | null {
+  const nome = nomeDeArquivoLimpo(bruto)?.replace(/[\\/]/g, "-").trim();
+  return nome || null;
+}

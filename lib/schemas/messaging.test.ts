@@ -27,6 +27,16 @@ describe("sendMessageSchema", () => {
     expect(r.success).toBe(false);
   });
 
+  it("aceita nome personalizado para documento e limita o tamanho", () => {
+    const base = {
+      conversation_id: "11111111-1111-4111-8111-111111111111",
+      type: "document",
+      media_storage_path: "org/conversa/out-uuid.pdf",
+    };
+    expect(sendMessageSchema.safeParse({ ...base, media_filename: "Análise Score GMN - Maria.pdf" }).success).toBe(true);
+    expect(sendMessageSchema.safeParse({ ...base, media_filename: "x".repeat(256) }).success).toBe(false);
+  });
+
   it("rejeita conversation_id inválido", () => {
     const r = sendMessageSchema.safeParse({ conversation_id: "not-a-uuid", body: "x" });
     expect(r.success).toBe(false);

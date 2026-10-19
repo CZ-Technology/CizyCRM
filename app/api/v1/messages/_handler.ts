@@ -45,6 +45,7 @@ import { canalDesativado } from "@/lib/channels/desativado";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
+import { nomeDeArquivoParaEnvio } from "@/lib/messaging/media/nome-de-arquivo";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
 import {
   buildVcard,
@@ -632,6 +633,7 @@ export async function sendMessageHandler(
 
   let outboundBody = input.body ?? null;
   let outboundMetadata: Record<string, unknown> = { ...(input.metadata ?? {}) };
+  const mediaFilename = input.type === "document" ? nomeDeArquivoParaEnvio(input.media_filename) : null;
 
   // ─── Assinatura do emissor (#2066) ─────────────────────────────────────────
   // Opt-in por organização (`organizations.settings.assinatura_mensagens`). A
@@ -849,6 +851,7 @@ export async function sendMessageHandler(
     sent_at: now,
     metadata: {
       ...(input.metadata ?? {}),
+      ...(mediaFilename ? { media_filename: mediaFilename } : {}),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       // Os dois nomes viajam GRAVADOS porque o balão não faz join: "Fulano ·
       // via {token}" é desenhado da própria linha. Vêm DEPOIS de
@@ -1103,7 +1106,7 @@ export async function sendMessageHandler(
         if (signErr || !signed?.signedUrl) {
           throw new Error(`storage_sign_failed: ${signErr?.message ?? "no_url"}`);
         }
-        const filename = input.media_storage_path.split("/").pop() ?? undefined;
+        const filename = mediaFilename ?? input.media_storage_path.split("/").pop() ?? undefined;
         await checkBoundary();
         ({ externalId } = await adapter.send({
           beforeSend: checkBoundary,
@@ -1142,6 +1145,7 @@ export async function sendMessageHandler(
           media: {
             url: input.media_url,
             mime: input.media_mime ?? "application/octet-stream",
+            ...(mediaFilename ? { filename: mediaFilename } : {}),
             caption: corpoDoCanal(input.body ?? null),
           },
           replyToExternalId: citada?.external_id ?? null,

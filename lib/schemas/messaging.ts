@@ -78,6 +78,8 @@ export const sendMessageSchema = z
     body: z.string().min(1).max(4096).optional(),
     media_url: z.string().url().optional(),
     media_storage_path: z.string().min(1).max(500).optional(),
+    /** Nome exibido ao destinatário para um documento enviado. */
+    media_filename: z.string().min(1).max(255).optional(),
     media_mime: z.string().optional(),
     media_size_bytes: z.number().int().positive().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),

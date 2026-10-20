@@ -101,12 +101,14 @@ jobs:
             fi
             for path in "${unresolved[@]}"; do
               case "$path" in
-                .github/workflows/ci.yml|.github/workflows/e2e.yml|.github/workflows/publish-image.yml|.github/workflows/release.yml)
+                .github/workflows/*)
                   if git cat-file -e "HEAD:$path" 2>/dev/null; then
                     echo "Conflito inesperado em arquivo existente: $path" >&2
                     exit 1
                   fi
-                  git rm -- "$path"
+                  # O fork só executa este workflow. Releases futuras podem
+                  # acrescentar novos workflows no upstream sem quebrar o sync.
+                  git rm -f -- "$path"
                   ;;
                 *)
                   echo "Conflito requer revisão manual: $path" >&2
@@ -120,7 +122,15 @@ jobs:
             echo 'Ainda há conflitos; não vou publicar.' >&2
             exit 1
           fi
-          # O fork mantém apenas este workflow; evita ativar CI do upstream sem querer.
+          # O fork mantém apenas este workflow; evita ativar CI do upstream.
+          # O upstream pode adicionar workflows sem gerar conflito de merge
+          # (como mysql-integracao.yml na v1.86.0), então removemos todos.
+          mapfile -t workflows < <(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml')
+          for path in "${workflows[@]}"; do
+            if [[ "$path" != '.github/workflows/sync-upstream.yml' ]]; then
+              git rm -f -- "$path"
+            fi
+          done
           mapfile -t workflows < <(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml')
           if [[ "${workflows[*]}" != '.github/workflows/sync-upstream.yml' ]]; then
             printf 'Workflows inesperados após o merge: %s\n' "${workflows[*]}" >&2
@@ -149,4 +159,5 @@ jobs:
             gh release create "$TARGET" -R "$GITHUB_REPOSITORY" --verify-tag --title "$TARGET" \
               --notes "Fork sincronizado com a release upstream $TARGET."
           fi
+
 

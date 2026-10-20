@@ -1,0 +1,361 @@
+[
+  {
+    "id": "p68qd029JV1vaU4E",
+    "name": "Atualizar CRM a cada 3 releases",
+    "description": "A cada hora, compara a release do fork com a versão instalada; avisa início, resultado e falhas do deploy no grupo.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "hours",
+                "hoursInterval": 1
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          0,
+          -96
+        ],
+        "id": "adac92dd-770d-4bde-82bd-f734373a24ed",
+        "name": "Schedule Trigger"
+      },
+      {
+        "parameters": {
+          "jsCode": "const raw = $('GitHub Releases').all().flatMap(item =>\n  Array.isArray(item.json) ? item.json : [item.json]\n);\nconst release = raw.find(item =>\n  item && !item.draft && !item.prerelease &&\n  /^v\\d+\\.\\d+\\.\\d+$/.test(item.tag_name || '')\n);\nconst installedRaw = $('Health').first().json?.data?.version || '';\nconst installedMatch = installedRaw.match(/^(\\d+)\\.(\\d+)\\.(\\d+)(?:[-+].*)?$/);\nif (!installedMatch) {\n  throw new Error('A rota de saúde não informou uma versão válida do CRM');\n}\nconst installed = installedMatch.slice(1).map(Number);\nif (!release) return [{ json: { deveAtualizar: false, instalada: installedRaw } }];\nconst target = release.tag_name.slice(1).split('.').map(Number);\nconst deveAtualizar = target[0] > installed[0] ||\n  (target[0] === installed[0] && target[1] > installed[1]) ||\n  (target[0] === installed[0] && target[1] === installed[1] && target[2] > installed[2]);\nreturn [{ json: { deveAtualizar, instalada: installedRaw, targetTag: release.tag_name } }];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          688,
+          -112
+        ],
+        "id": "65002a2d-e7a7-4e3b-aae9-b38f620a067b",
+        "name": "Code in JavaScript"
+      },
+      {
+        "parameters": {
+          "url": "https://api.github.com/repos/CZ-Technology/CizyCRM/releases?per_page=1",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          224,
+          -96
+        ],
+        "id": "6119fb39-7b07-4c4b-9304-cadb0a8622e4",
+        "name": "GitHub Releases"
+      },
+      {
+        "parameters": {
+          "url": "https://crm.cztechnology.shop/api/v1/health",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          448,
+          -96
+        ],
+        "id": "1697059a-fb1d-4db5-b175-8ffd6b62d8a4",
+        "name": "Health"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "5059c929-3b3e-4323-b94a-3af991476939",
+                "leftValue": "={{ $json.deveAtualizar }}",
+                "rightValue": false,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          896,
+          -96
+        ],
+        "id": "c7e60ea1-0b60-404e-afdf-79f179c24a95",
+        "name": "If"
+      },
+      {
+        "parameters": {
+          "authentication": "privateKey",
+          "command": "=bash /home/ubuntu/cizycrm-ops/deploy-fork.sh {{ $('Code in JavaScript').first().json.targetTag }}"
+        },
+        "type": "n8n-nodes-base.ssh",
+        "typeVersion": 1,
+        "position": [
+          1344,
+          -96
+        ],
+        "id": "e3f717f9-6570-46ba-9d65-4f68d493ca00",
+        "name": "Atualizar VPS com fork",
+        "credentials": {
+          "sshPrivateKey": {
+            "id": "5la2utkAoJ0wFVhF",
+            "name": "SSH VPS"
+          }
+        },
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "authentication": "privateKey",
+          "command": "=bash /home/ubuntu/cizycrm-ops/send-group-alert.sh deploy-start {{ $('Code in JavaScript').first().json.targetTag }} {{ $execution.id }}"
+        },
+        "type": "n8n-nodes-base.ssh",
+        "typeVersion": 1,
+        "position": [
+          1120,
+          -96
+        ],
+        "id": "42ec7369-7fa1-41da-a0c6-3ef32e755bbc",
+        "name": "Avisar início",
+        "credentials": {
+          "sshPrivateKey": {
+            "id": "5la2utkAoJ0wFVhF",
+            "name": "SSH VPS"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const output = $input.first().json;\nconst stdout = String(output.stdout || '');\nconst ok = !output.error && /deploy_result=ok\b/.test(stdout);\nreturn [{ json: { ok, targetTag: $('Code in JavaScript').first().json.targetTag, attemptId: $execution.id } }];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1568,
+          -96
+        ],
+        "id": "b14aee1e-81eb-478c-8176-ab0c52a36d0a",
+        "name": "Verificar deploy"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "d273e1f3-c525-46fe-9cc2-4d389317db3b",
+                "leftValue": "={{ $json.ok }}",
+                "rightValue": false,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1792,
+          -96
+        ],
+        "id": "36c886d9-a9c4-4bed-8af1-b29ddba80306",
+        "name": "Deploy saudável?"
+      },
+      {
+        "parameters": {
+          "authentication": "privateKey",
+          "command": "=bash /home/ubuntu/cizycrm-ops/send-group-alert.sh deploy-ok {{ $json.targetTag }} {{ $json.attemptId }}"
+        },
+        "type": "n8n-nodes-base.ssh",
+        "typeVersion": 1,
+        "position": [
+          2016,
+          -160
+        ],
+        "id": "fe3d0de3-5dcd-49bf-8568-7e9a44655a53",
+        "name": "Avisar deploy saudável",
+        "credentials": {
+          "sshPrivateKey": {
+            "id": "5la2utkAoJ0wFVhF",
+            "name": "SSH VPS"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "authentication": "privateKey",
+          "command": "=bash /home/ubuntu/cizycrm-ops/send-group-alert.sh deploy-failed {{ $json.targetTag }} {{ $json.attemptId }}"
+        },
+        "type": "n8n-nodes-base.ssh",
+        "typeVersion": 1,
+        "position": [
+          2016,
+          0
+        ],
+        "id": "b10ab4c0-30c5-4e41-bbb1-6e550e3ce57d",
+        "name": "Avisar erro no deploy",
+        "credentials": {
+          "sshPrivateKey": {
+            "id": "5la2utkAoJ0wFVhF",
+            "name": "SSH VPS"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "GitHub Releases",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GitHub Releases": {
+        "main": [
+          [
+            {
+              "node": "Health",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Health": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript": {
+        "main": [
+          [
+            {
+              "node": "If",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If": {
+        "main": [
+          [
+            {
+              "node": "Avisar início",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Avisar início": {
+        "main": [
+          [
+            {
+              "node": "Atualizar VPS com fork",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Atualizar VPS com fork": {
+        "main": [
+          [
+            {
+              "node": "Verificar deploy",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verificar deploy": {
+        "main": [
+          [
+            {
+              "node": "Deploy saudável?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Deploy saudável?": {
+        "main": [
+          [
+            {
+              "node": "Avisar deploy saudável",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Avisar erro no deploy",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": false,
+      "executionTimeout": 3600
+    },
+    "staticData": {
+      "node:Schedule Trigger": {
+        "recurrenceRules": [
+          12
+        ]
+      }
+    },
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "tags": []
+  }
+]
+

@@ -108,6 +108,26 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
       .eq("organization_id", org)
       .maybeSingle();
     if (contact) context.contact = contact;
+  } else if (row.entity_kind === "agent_case" && row.entity_id) {
+    const { data: agentCase } = await admin
+      .from("agent_cases")
+      .select("id, conversation_id, title, summary, blocker, source, status, created_at")
+      .eq("id", row.entity_id)
+      .eq("organization_id", org)
+      .maybeSingle();
+    if (agentCase) {
+      context.agent_case = agentCase;
+      const contactId = typeof row.payload?.contact_id === "string" ? row.payload.contact_id : null;
+      if (contactId) {
+        const { data: contact } = await admin
+          .from("contacts")
+          .select("id, name, display_name, phone_number, is_anonymized, is_personal")
+          .eq("id", contactId)
+          .eq("organization_id", org)
+          .maybeSingle();
+        if (contact && !contact.is_anonymized) context.contact = contact;
+      }
+    }
   } else if (row.entity_kind === "calendar_appointment" && row.entity_id) {
     const { data: appointment } = await admin
       .from("calendar_appointments")

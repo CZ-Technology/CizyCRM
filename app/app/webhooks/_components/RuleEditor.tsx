@@ -140,6 +140,10 @@ export const CURATED_FIELDS: Record<TriggerEvent, CuratedField[]> = {
   "lead.reopened": LEAD_FIELDS,
   "lead.assigned": LEAD_FIELDS,
   "message.received": MESSAGE_FIELDS,
+  "ai.case_opened": [
+    { value: "event.source", label: "Origem do caso", op: "eq" },
+    { value: "event.status", label: "Situação inicial do caso", op: "eq" },
+  ],
   // O que a regra quer filtrar numa falha é o MOTIVO (só o 131047, só o
   // timeout) e de QUEM é o contato — `event.erro.codigo` é o mesmo valor que a
   // coluna `messages.error_code` grava, então quem compara com o webhook da

@@ -58,6 +58,7 @@ export const ENTIDADE_ESPERADA_POR_GATILHO = {
   "lead.reopened": "crm_lead",
   "lead.assigned": "crm_lead",
   "message.received": "message",
+  "ai.case_opened": "agent_case",
   // A entrega FALHOU depois de aceita — o 131047 que a Meta recusa pelo
   // webhook de status, o timeout do transporte, o pré-voo do próprio envio.
   // Gatilho novo porque quem integra via token não lê o nosso banco (#1614):

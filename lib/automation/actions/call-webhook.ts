@@ -228,6 +228,17 @@ const CONTACT_PUBLIC_FIELDS = [
   "created_at",
 ] as const;
 
+const AGENT_CASE_PUBLIC_FIELDS = [
+  "id",
+  "conversation_id",
+  "title",
+  "summary",
+  "blocker",
+  "source",
+  "status",
+  "created_at",
+] as const;
+
 function projectPublicFields(
   row: unknown,
   fields: readonly string[],
@@ -414,6 +425,7 @@ export async function executeCallWebhook(
   const contactPublic = projectPublicFields(ctx.context.contact, CONTACT_PUBLIC_FIELDS);
   const ownerPublic = await responsavelPublico(ctx, config);
   const compromissoPublic = localDoCompromisso(ctx.context.appointment);
+  const agentCasePublic = projectPublicFields(ctx.context.agent_case, AGENT_CASE_PUBLIC_FIELDS);
   const entrega = idDaEntrega(ctx.event.id, ctx.ruleId, ctx.actionIndex ?? 0, ctx.ruleActions ?? []);
   const body = JSON.stringify({
     event: ctx.event.event_type,
@@ -424,6 +436,7 @@ export async function executeCallWebhook(
       ...payloadPublico(ctx.event.event_type, ctx.event.payload ?? {}),
       ...(leadPublic ? { lead: leadPublic } : {}),
       ...(contactPublic ? { contact: contactPublic } : {}),
+      ...(agentCasePublic ? { agent_case: agentCasePublic } : {}),
       ...(compromissoPublic ?? {}),
       // Só com `include_owner: true` (#1612) — ver `responsavelPublico`.
       ...(ownerPublic ? { owner: ownerPublic } : {}),

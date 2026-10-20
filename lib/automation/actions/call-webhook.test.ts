@@ -399,6 +399,41 @@ describe("executeCallWebhook", () => {
     return JSON.parse(body).data as Record<string, unknown>;
   }
 
+  it("caso aberto envia apenas os campos públicos do caso e do contato", async () => {
+    const ctx = baseCtx({
+      event_type: "ai.case_opened",
+      entity_kind: "agent_case",
+      entity_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      payload: { case_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", source: "agent", status: "awaiting_human" },
+    });
+    ctx.context = {
+      agent_case: {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        conversation_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        title: "Cliente pediu contrato",
+        summary: "Precisa de ajuda para assinar",
+        blocker: "Assinatura humana",
+        source: "agent",
+        status: "awaiting_human",
+        organization_id: "segredo-interno",
+      },
+      contact: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Cliente Teste", is_personal: false },
+    };
+
+    const data = await corpoRecebido(ctx, {});
+    expect(data.agent_case).toEqual({
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      conversation_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      title: "Cliente pediu contrato",
+      summary: "Precisa de ajuda para assinar",
+      blocker: "Assinatura humana",
+      source: "agent",
+      status: "awaiting_human",
+    });
+    expect(data.contact).toEqual({ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Cliente Teste" });
+    expect(JSON.stringify(data)).not.toContain("segredo-interno");
+  });
+
   it("sem include_owner, o responsável não aparece no corpo (#1612)", async () => {
     const data = await corpoRecebido(ctxDeCompromisso(), {});
 

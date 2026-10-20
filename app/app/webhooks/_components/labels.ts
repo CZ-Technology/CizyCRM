@@ -30,6 +30,7 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   "lead.reopened": "Quando um lead encerrado for reaberto",
   "lead.assigned": "Quando o responsável do lead mudar",
   "message.received": "Quando chegar mensagem no WhatsApp",
+  "ai.case_opened": "Quando o agente abrir um caso",
   // A frase é do ponto de vista de quem RECEBE o aviso: a falha é do envio, e
   // é ela que manda o integrador verificar. "não for entregue" cobre os dois
   // caminhos que emitem (recusa da plataforma e pré-voo), sem prometer que a

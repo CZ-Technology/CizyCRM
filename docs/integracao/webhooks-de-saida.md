@@ -34,7 +34,13 @@ Um `POST` com `Content-Type: application/json` e este corpo:
 | `occurred_at` | A hora em que o CRM montou esta entrega (o disparo da automação ou o clique em Reenviar), em ISO-8601 UTC com milissegundos. É o que o campo sempre foi. As retentativas automáticas de um mesmo disparo, segundos depois, repetem o corpo e portanto este valor. Para medir a idade da requisição, prefira o `t` de dentro do `X-Webhook-Signature` (seção 3): ele é a hora do envio de **cada tentativa** e também é coberto pela assinatura. |
 | `happened_at` | A hora em que o **fato** aconteceu (o lead foi criado, a etapa mudou…), em ISO-8601 UTC com milissegundos. É a mesma em todas as tentativas e no Reenviar, e pode ter horas ou dias de idade (uma automação adiada pela janela de envio do WhatsApp, um Reenviar clicado dias depois). Use-o para ordenar os fatos no seu sistema; nunca para recusar requisição velha. |
 | `delivery_id` | O id da entrega — o mesmo valor do cabeçalho `X-Webhook-Delivery`. |
-| `data` | Os dados do evento, com a projeção pública do lead, do contato e do compromisso quando existem. |
+| `data` | Os dados do evento, com a projeção pública do lead, do contato, do compromisso ou do caso do agente quando existem. |
+
+### Caso aberto pelo agente
+
+O gatilho `ai.case_opened` nasce quando um caso é registrado em `agent_cases` com situação inicial `awaiting_human` ou `awaiting_lead`. O webhook traz `data.case_id`, `data.source`, `data.status` e, se o caso ainda existir, `data.agent_case` com `id`, `conversation_id`, `title`, `summary`, `blocker`, `source`, `status` e `created_at`. `data.contact` traz os campos públicos do contato quando ele não foi anonimizado. Configure uma regra em **Webhooks → Automações** com o gatilho **Quando o agente abrir um caso** e a ação **Avisar outro sistema (webhook)**.
+
+O receptor deve conferir `event === "ai.case_opened"`, deduplicar pelo `delivery_id` e considerar que o caso pode ter sido fechado entre a abertura e a entrega. Para avisar uma equipe em um grupo, envie ao grupo apenas o resumo necessário e um link autenticado para `/app/ai/cases?caso=<case_id>`. O evento pode vir de fontes diferentes; use `data.source` se o aviso deve valer apenas para casos originados pelo agente ou por `guardrail_autofallback`.
 
 ## 2. Os cabeçalhos
 

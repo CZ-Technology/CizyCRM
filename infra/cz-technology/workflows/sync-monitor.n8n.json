@@ -1,0 +1,141 @@
+[
+  {
+    "name": "CZ Tech - Avisos de sincronização GitHub",
+    "description": "Avisa o grupo sobre erro no sync upstream e sobre nova release no fork. Deduplicação no servidor.",
+    "active": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 10
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          0,
+          0
+        ],
+        "id": "da7cc30e-b671-4c98-8b85-5649b4a34e94",
+        "name": "A cada 10 minutos"
+      },
+      {
+        "parameters": {
+          "url": "https://api.github.com/repos/CZ-Technology/CizyCRM/actions/runs?per_page=15",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          224,
+          0
+        ],
+        "id": "9fc1fb1d-4fb6-411f-bef6-cc9b70d5aa88",
+        "name": "GitHub Actions"
+      },
+      {
+        "parameters": {
+          "url": "https://api.github.com/repos/CZ-Technology/CizyCRM/releases?per_page=3",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          448,
+          0
+        ],
+        "id": "7a333e94-f24b-4176-8837-32353fb3f0a2",
+        "name": "Releases do fork"
+      },
+      {
+        "parameters": {
+          "jsCode": "const runs = $('GitHub Actions').first().json.workflow_runs || [];\nconst releases = $('Releases do fork').all().flatMap(item =>\n  Array.isArray(item.json) ? item.json : [item.json]);\nconst cutoff = Date.now() - 24 * 60 * 60 * 1000;\nconst alerts = [];\nfor (const run of runs) {\n  if (run.name !== 'Sync upstream (a cada 3 releases)' || run.status !== 'completed') continue;\n  if (run.conclusion !== 'failure' || Date.parse(run.updated_at) < cutoff) continue;\n  if (!/^\\d+$/.test(String(run.id))) continue;\n  alerts.push({ kind: 'sync-failed', value: String(run.id) });\n}\nfor (const release of releases) {\n  if (release.draft || release.prerelease || Date.parse(release.published_at) < cutoff) continue;\n  if (!/^v\\d+\\.\\d+\\.\\d+$/.test(release.tag_name || '')) continue;\n  alerts.push({ kind: 'sync-updated', value: release.tag_name });\n}\nreturn alerts.map(json => ({ json }));\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          672,
+          0
+        ],
+        "id": "c6b00d5d-b10d-4e90-9d2d-03b373dbe2ed",
+        "name": "Selecionar avisos"
+      },
+      {
+        "parameters": {
+          "authentication": "privateKey",
+          "command": "=bash /home/ubuntu/cizycrm-ops/send-group-alert.sh {{ $json.kind }} {{ $json.value }}"
+        },
+        "type": "n8n-nodes-base.ssh",
+        "typeVersion": 1,
+        "position": [
+          896,
+          0
+        ],
+        "id": "dbcd227a-5a4e-49a1-9309-eb2213d95501",
+        "name": "Enviar avisos ao grupo",
+        "credentials": {
+          "sshPrivateKey": {
+            "id": "5la2utkAoJ0wFVhF",
+            "name": "SSH VPS"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "A cada 10 minutos": {
+        "main": [
+          [
+            {
+              "node": "GitHub Actions",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GitHub Actions": {
+        "main": [
+          [
+            {
+              "node": "Releases do fork",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Releases do fork": {
+        "main": [
+          [
+            {
+              "node": "Selecionar avisos",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Selecionar avisos": {
+        "main": [
+          [
+            {
+              "node": "Enviar avisos ao grupo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "id": "CzSyncAlert202610"
+  }
+]
+

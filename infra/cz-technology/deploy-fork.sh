@@ -131,7 +131,13 @@ for service in app worker scheduler; do
   container="$(cd "$INSTALL_DIR" && docker compose -f docker-compose.prod.yml \
     -f docker-compose.traefik.yml --env-file .env ps -q "$service")"
   [[ -n "$container" ]] || exit 1
-  status="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
+  status=starting
+  for _ in $(seq 1 36); do
+    status="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
+    [[ "$status" == healthy ]] && break
+    [[ "$status" == unhealthy ]] && break
+    sleep 5
+  done
   [[ "$status" == healthy ]] || { echo "container_unhealthy:$service:$status" >>"$log"; exit 1; }
 done
 done_ok=true

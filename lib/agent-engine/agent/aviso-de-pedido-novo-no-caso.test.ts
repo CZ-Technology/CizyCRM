@@ -75,6 +75,15 @@ const PEDIDO_NOVO = {
 function poolDoEngine(linhas: Array<{ case_id: string }>, rowCount = linhas.length) {
   const consultas: Array<{ sql: string; params: unknown[] }> = [];
   const pool = {
+    connect: async () => ({
+      query: (sql: string, params: unknown[]) => {
+        if (/^(begin|commit|rollback|select pg_advisory_xact_lock)/.test(sql))
+          return Promise.resolve({ rows: [], rowCount: 0 });
+        consultas.push({ sql, params });
+        return Promise.resolve({ rows: linhas, rowCount });
+      },
+      release: () => {},
+    }),
     query: (sql: string, params: unknown[]) => {
       consultas.push({ sql, params });
       return Promise.resolve({ rows: linhas, rowCount });
@@ -262,7 +271,7 @@ describe("pedido novo num caso já aberto (#3097)", () => {
 
     expect(res).toEqual({ ok: true, caseId: CASO_ANTIGO });
     // O caso e o evento `opened` nascem no MESMO statement atômico — uma ida ao
-    // pool, como antes da mudança (a linha em si é do Postgres; ver o invariante).
+    // escrita, além do controle transacional (a linha é do Postgres; ver o invariante).
     expect(consultas).toHaveLength(1);
     expect(consultas[0]!.sql).toContain("insert into agent_cases");
     expect(consultas[0]!.sql).toContain("'opened'");

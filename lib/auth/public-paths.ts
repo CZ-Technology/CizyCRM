@@ -97,6 +97,8 @@ export const PUBLIC_PATHS: RegExp[] = [
   // Ancoradas com `$` de propósito. `/^\/api\/v1\/messages/` sem âncora daria
   // carona a `/api/v1/messages/[id]`, que NÃO tem suporte a Bearer.
   /^\/api\/v1\/messages$/,
+  // POST aceita token de integração; GET mantém a autenticação de sessão.
+  /^\/api\/v1\/ai\/cases$/,
   // ATUALIZAR LEAD SERVER-TO-SERVER. Mesma dualidade de `/api/v1/messages`
   // acima: sessão de navegador OU Bearer `dsk_…`, resolvidos por
   // `lib/api/auth-dual.ts` DENTRO da rota (`app/api/v1/leads/[id]/route.ts`).

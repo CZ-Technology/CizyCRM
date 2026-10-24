@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Caso aberto por integração",
+    "subtitle": "CRM organiza a fila; ferramenta externa conduz a revisão",
+    "output": "casos-abertos-por-integracao.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "entrada", "label": "Entrada autenticada" },
+    { "id": "regra", "label": "Operação nativa" },
+    { "id": "dados", "label": "Persistência" },
+    { "id": "equipe", "label": "Equipe" }
+  ],
+  "mainPath": ["api", "links", "open", "case", "external", "close"],
+  "nodes": [
+    {
+      "id": "api",
+      "lane": "entrada",
+      "col": 1,
+      "type": "api",
+      "label": "POST /api/v1/ai/cases",
+      "sublabel": "auth dual, organização, papel e escopo"
+    },
+    {
+      "id": "links",
+      "lane": "regra",
+      "col": 1,
+      "type": "service",
+      "label": "createReviewCase",
+      "sublabel": "contato, conversa e referência idempotente"
+    },
+    {
+      "id": "open",
+      "lane": "regra",
+      "col": 2,
+      "type": "service",
+      "label": "openCase",
+      "sublabel": "lock transacional e abertura nativa"
+    },
+    {
+      "id": "case",
+      "lane": "dados",
+      "col": 2,
+      "type": "database",
+      "label": "agent_cases + eventos",
+      "sublabel": "referência, resumo, links e auditoria"
+    },
+    {
+      "id": "external",
+      "lane": "equipe",
+      "col": 3,
+      "type": "frontend",
+      "label": "Formulário do n8n",
+      "sublabel": "acesso individual, correção e recálculo externos"
+    },
+    {
+      "id": "close",
+      "lane": "entrada",
+      "col": 4,
+      "type": "api",
+      "label": "crm_close_human_case",
+      "sublabel": "automação registra a decisão e o responsável"
+    }
+  ],
+  "edges": [
+    { "from": "api", "to": "links", "label": "organização confiável e referência" },
+    { "from": "links", "to": "open", "label": "lead e conversa do mesmo contato" },
+    { "from": "open", "to": "case", "label": "caso único e evento opened" },
+    { "from": "case", "to": "external", "label": "links individuais no resumo" },
+    { "from": "external", "to": "close", "label": "aprovação autenticada na ferramenta externa" },
+    { "from": "close", "to": "case", "label": "fechamento condicional e histórico" }
+  ]
+}

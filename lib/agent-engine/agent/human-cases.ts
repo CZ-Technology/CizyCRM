@@ -18,15 +18,14 @@ import { TIPOS_DE_CASO, type TipoDeCaso } from "@/lib/ai/case-copy";
  * condicional (WHERE status = <precondição>) que nunca pisa em estado terminal;
  * UPDATE + INSERT do(s) evento(s) na MESMA transação — aqui via um único
  * statement (WITH ... INSERT ... SELECT FROM <cte>), que é atômico por natureza
- * e dispensa BEGIN/COMMIT explícito, então funciona tanto com pg.Pool quanto
- * com pg.PoolClient (Queryable).
+ * nas transições. A abertura usa ainda uma transação com lock por organização
+ * e conversa, compartilhada pelo engine e pelas integrações.
  *
  * `agent_cases.lead_id` é FK para `crm_leads` (o lead do pipeline do CRM) — uma
  * entidade DIFERENTE do `contact_id`/`leadId` usado no resto do agent-engine (ver
- * draft-reply.ts). O espelho de estágio (mirrorLeadStageToCrm) já resolve o
- * negócio do contato para MOVER o card, mas nada aqui lê esse id, então
- * `agent_cases.lead_id` fica NULL sempre — o caso ancora em `conversation_id`
- * (CaseIds não carrega o contact_id: nada aqui o lê).
+ * draft-reply.ts). Integrações podem fornecer o negócio em `CaseIds.leadId`
+ * depois de validar organização, conversa e contato. Sem esse argumento, o
+ * vínculo permanece NULL e o caso ancora apenas em `conversation_id`.
  */
 import { z } from 'zod';
 import type pg from 'pg';
@@ -37,6 +36,7 @@ export interface CaseIds {
   tenantId: string;
   conversationId: string;
   agentId?: string | null;
+  leadId?: string | null;
 }
 
 /**
@@ -232,11 +232,11 @@ export function recusaDeCasoAberto(): OpenCaseResult {
  * INSERT — sem essa condição haveria corrida entre a checagem e a escrita;
  * aqui checagem e escrita são a MESMA operação. Essa atomicidade check-and-write
  * vale DENTRO do statement; a garantia de não-duplicação entre transações
- * CONCORRENTES vem da serialização per-contact do job_queue
- * (uniq_job_queue_one_running_per_contact), não deste statement sozinho.
+ * CONCORRENTES vem do lock de organização + conversa em `openCase` abaixo,
+ * inclusive quando o chamador não passa pela fila do engine.
  */
-export async function openCase(
-  db: pg.Pool,
+async function insertCase(
+  db: Queryable,
   ids: CaseIds,
   input: {
     title: string;
@@ -244,23 +244,32 @@ export async function openCase(
     blocker: string;
     contextSnapshot?: Record<string, unknown>;
     source?: 'agent' | 'guardrail_autofallback';
+    /** Autoria confiável do chamador, nunca um campo do payload do modelo. */
+    actorKind?: 'agent' | 'system';
+    /** Chave validada da integração; serializada mesmo entre conversas distintas. */
+    externalReference?: { id: string; kind: string };
     kind?: string;
   },
 ): Promise<OpenCaseResult> {
-  await guardServiceEffect();
   const source = input.source ?? 'agent';
-  const actorKind = source === 'agent' ? 'agent' : 'system';
+  const actorKind = input.actorKind ?? (source === 'agent' ? 'agent' : 'system');
 
   const { rows } = await db.query<{ case_id: string }>(
     `with new_case as (
        insert into agent_cases
-         (organization_id, conversation_id, agent_id, title, summary, blocker, context_snapshot, source, kind)
-       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $11
+         (organization_id, conversation_id, agent_id, title, summary, blocker, context_snapshot, source, kind, lead_id)
+       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $11, $12
         where not exists (
           select 1 from agent_cases
            where organization_id = $1 and conversation_id = $2
              and status = any($9::text[])
         )
+          and not exists (
+            select 1 from agent_cases
+             where organization_id = $1 and $13::text is not null
+               and context_snapshot->'external_reference'->>'id' = $13
+               and context_snapshot->'external_reference'->>'kind' = $14
+          )
        returning id
      )
      insert into agent_case_events (organization_id, case_id, kind, actor_kind)
@@ -281,6 +290,9 @@ export async function openCase(
       // O default mora aqui e no banco: se um caminho novo esquecer de passar, a
       // linha nasce classificada como 'outro' em vez de nula.
       input.kind ?? 'outro',
+      ids.leadId ?? null,
+      input.externalReference?.id ?? null,
+      input.externalReference?.kind ?? null,
     ],
   );
 
@@ -292,6 +304,39 @@ export async function openCase(
     return recusaDeCasoAberto();
   }
   return { ok: true, caseId };
+}
+
+/** A abertura pela integração também passa pela mesma serialização do engine.
+ * O lock e o INSERT são statements separados: depois de esperar pelo lock,
+ * READ COMMITTED precisa enxergar o caso que o primeiro chamador confirmou. */
+export async function openCase(
+  db: pg.Pool,
+  ids: CaseIds,
+  input: Parameters<typeof insertCase>[2],
+): Promise<OpenCaseResult> {
+  await guardServiceEffect();
+  const client = await db.connect();
+  let failed: Error | undefined;
+  try {
+    await client.query('begin');
+    if (input.externalReference) {
+      await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `human-case-reference:${ids.tenantId}:${input.externalReference.kind}:${input.externalReference.id}`,
+      ]);
+    }
+    await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [
+      `human-case:${ids.tenantId}:${ids.conversationId}`,
+    ]);
+    const result = await insertCase(client, ids, input);
+    await client.query('commit');
+    return result;
+  } catch (error) {
+    failed = error instanceof Error ? error : new Error(String(error));
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release(failed);
+  }
 }
 
 export type ProvideCaseUpdateResult = { ok: true } | { ok: false; error: { code: string; message: string } };

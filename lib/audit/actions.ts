@@ -445,6 +445,7 @@ export const AUDIT_ACTIONS = [
   // ficava invisível (o ERP sugeriu, o atendente decidiu).
   "conversation.draft_created",
   "conversation.draft_used",
+  "ai.case_opened",
   "ai.case_replied",
   // O agente participando do chamado — separado de `ai.case_replied` (a pessoa
   // respondendo) porque juntar os dois apagaria justamente quem agiu.

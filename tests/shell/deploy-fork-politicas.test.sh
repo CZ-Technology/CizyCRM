@@ -5,7 +5,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_ROOT="$(cd "${TMPDIR:-/tmp}" && pwd)"
 WORK="$(mktemp -d "$TMP_ROOT/cz-deploy-proof.XXXXXX")"
 case "$WORK" in "$TMP_ROOT"/cz-deploy-proof.*) ;; *) exit 2 ;; esac
-trap 'rm -rf -- "$WORK"' EXIT
+cleanup() {
+  local code=$?
+  if [ "$code" != 0 ]; then
+    for log in "$WORK/failure.log" "$WORK/success.log"; do
+      [ ! -f "$log" ] || { printf '\n%s\n' "$log"; cat "$log"; }
+    done
+  fi
+  rm -rf -- "$WORK"
+  exit "$code"
+}
+trap cleanup EXIT
 mkdir -p "$WORK/bin" "$WORK/ops/build-src/.git" "$WORK/install/hostgator-setup-kit"
 export CZ_OPS_DIR="$WORK/ops" CZ_INSTALL_DIR="$WORK/install"
 # O escritor real do kit, que tambem existia na versao anterior.

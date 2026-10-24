@@ -2699,6 +2699,11 @@ gravar_imagens() {
   # não no `stable` móvel do default do compose.
   set_env_var "$envfile" VOICE_AGENT_IMAGE       "${IMG_VOICE_AGENT}:${versao}"
   set_env_var "$envfile" VOICE_AGENT_PULL_POLICY "$politica"
+  # enter_project exporta o .env antigo. O Compose prefere esse ambiente ao
+  # arquivo recem-gravado: um `never` herdado do fork impedia o pull da imagem
+  # nova mesmo com `missing` no disco. Atualiza as duas fontes juntas.
+  export APP_PULL_POLICY="$politica" WORKER_PULL_POLICY="$politica"
+  export SCHEDULER_PULL_POLICY="$politica" VOICE_AGENT_PULL_POLICY="$politica"
   # O WAHA de quem já roda em ARM mora AQUI, e não numa linha do update.sh: é
   # esta função que o update.sh ANTIGO chama depois de reler o kit, então é
   # assim que a troca chega já na atualização que a traz. O export vale porque

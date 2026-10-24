@@ -144,7 +144,7 @@
       },
       {
         "parameters": {
-          "jsCode": "const output = $input.first().json;\nconst stdout = String(output.stdout || '');\nconst ok = !output.error && /deploy_result=ok\b/.test(stdout);\nreturn [{ json: { ok, targetTag: $('Code in JavaScript').first().json.targetTag, attemptId: $execution.id } }];\n"
+          "jsCode": "const output = $input.first().json;\nconst targetTag = $('Code in JavaScript').first().json.targetTag;\nconst expected = 'deploy_result=ok version=' + targetTag;\nconst lines = String(output.stdout || '').split(String.fromCharCode(10));\nconst ok = !output.error && output.code === 0 && !output.signal &&\n  lines.some(line => line.trim() === expected);\nreturn [{ json: { ok, targetTag, attemptId: $execution.id } }];\n"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,

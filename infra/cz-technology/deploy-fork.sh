@@ -59,10 +59,20 @@ docker build --progress=quiet -f "$SOURCE_DIR/Dockerfile.scheduler" \
   "$SOURCE_DIR" >>"$log" 2>&1
 
 stage=update_kit
-(cd "$INSTALL_DIR" && bash hostgator-setup-kit/update.sh --to "$target") >>"$log" 2>&1
+cp -p "$INSTALL_DIR/.env" "$INSTALL_DIR/.env.before-czfork-$version-$(date -u +%Y%m%dT%H%M%SZ)"
+(
+  cd "$INSTALL_DIR"
+  # A primeira transicao ainda executa o update.sh que estava instalado.
+  # Ele pode exportar `never` antes de reler o kit novo. As imagens locais
+  # ja foram construidas; para a fase do kit, os pins publicados usam missing.
+  source hostgator-setup-kit/_common.sh
+  for policy_key in APP_PULL_POLICY WORKER_PULL_POLICY SCHEDULER_PULL_POLICY VOICE_AGENT_PULL_POLICY; do
+    set_env_var .env "$policy_key" missing
+  done
+  bash hostgator-setup-kit/update.sh --to "$target"
+) >>"$log" 2>&1
 
 stage=pin_fork_images
-cp -p "$INSTALL_DIR/.env" "$INSTALL_DIR/.env.before-czfork-$version-$(date -u +%Y%m%dT%H%M%SZ)"
 python3 - "$INSTALL_DIR/.env" "$version" <<'PY'
 import os
 import re

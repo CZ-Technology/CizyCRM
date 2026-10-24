@@ -28,7 +28,7 @@ stage=preflight
 done_ok=false
 finish() {
   result=$?
-  if [[ "$done_ok" == true ]]; then
+  if [[ "$done_ok" == true && "$result" -eq 0 ]]; then
     echo "deploy_result=ok version=$target"
   else
     echo "deploy_result=error version=$target stage=$stage log=$log" >&2
@@ -151,4 +151,3 @@ for service in app worker scheduler; do
   [[ "$status" == healthy ]] || { echo "container_unhealthy:$service:$status" >>"$log"; exit 1; }
 done
 done_ok=true
-

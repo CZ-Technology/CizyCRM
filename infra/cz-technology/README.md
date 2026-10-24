@@ -28,6 +28,14 @@ solicitada. `tests/shell/deploy-updater.check.mjs` reproduz o resultado daquela
 execução e recusa marcadores parciais, de outra versão ou com erro de saída.
 Não reexecutar o atualizador só para corrigir um aviso anterior.
 
+O próprio workflow de sincronização executa os testes de aviso, política e
+transição de kit antes de publicar uma sincronização. Em PRs que alteram essas
+peças, executa somente essa verificação, sem publicar release ou fazer deploy.
+O job de teste tem acesso de leitura e usa simulações; não envia mensagens.
+O monitor do grupo considera somente execuções da `main` por push, agenda ou
+disparo manual. Falhas das verificações de PR não são falhas de atualização da
+VPS e não geram avisos de produção.
+
 Na VPS, os scripts ficam em `/home/ubuntu/cizycrm-ops/`. O arquivo `alert-group.env`, com `CZ_ALERT_GROUP_ID`, deve existir nesse diretório com permissão restrita. O envio lê `WAHA_API_KEY` do `.env` da instalação. Não salve essas credenciais no repositório. O arquivo `sent-alerts.log` impede avisos repetidos da mesma execução ou release.
 
 Para revisar uma falha de deploy, consulte `/home/ubuntu/cizycrm-ops/deploy-vX.Y.Z-<data>.log` e a execução do workflow no n8n. Para verificar a versão instalada, consulte `https://crm.cztechnology.shop/api/v1/health`.

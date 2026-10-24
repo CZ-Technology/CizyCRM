@@ -26,3 +26,18 @@ test('aceita linhas de log e CRLF, sem caracteres de controle invisiveis no codi
  assert.equal(verify({...success,stdout:'log anterior\r\ndeploy_result=ok version=v1.89.0\r\n'}).ok,true);
  assert.equal(source.includes(String.fromCharCode(8)),false);
 });
+
+test('monitor avisa falhas da main e ignora verificacoes de pull requests',async()=>{
+ const [monitor]=JSON.parse(await readFile(new URL('../../infra/cz-technology/workflows/sync-monitor.n8n.json',import.meta.url),'utf8'));
+ const select=new Function('$',monitor.nodes.find(n=>n.name==='Selecionar avisos').parameters.jsCode);
+ const base={name:'Sync upstream (a cada 3 releases)',status:'completed',conclusion:'failure',updated_at:new Date().toISOString()};
+ const runs=[
+  {...base,id:1,event:'pull_request',head_branch:'fix/verify-fork-ops'},
+  {...base,id:2,event:'pull_request_target',head_branch:'main'},
+  {...base,id:3,event:'workflow_dispatch',head_branch:'feature/test'},
+  {...base,id:4,event:'schedule',head_branch:'main'},
+  {...base,id:5,event:'push',head_branch:'main'},
+ ];
+ const result=select(name=>name==='GitHub Actions'?{first:()=>({json:{workflow_runs:runs}})}:{all:()=>[]});
+ assert.deepEqual(result.map(i=>i.json),[{kind:'sync-failed',value:'4'},{kind:'sync-failed',value:'5'}]);
+});

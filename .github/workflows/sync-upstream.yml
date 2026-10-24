@@ -3,20 +3,52 @@ name: Sync upstream (a cada 3 releases)
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/sync-upstream.yml']
+    paths:
+      - '.github/workflows/sync-upstream.yml'
+      - 'hostgator-setup-kit/_common.sh'
+      - 'infra/cz-technology/**'
+      - 'tests/shell/*pull*'
+      - 'tests/shell/deploy-*'
+  pull_request:
+    paths:
+      - '.github/workflows/sync-upstream.yml'
+      - 'hostgator-setup-kit/_common.sh'
+      - 'infra/cz-technology/**'
+      - 'tests/shell/*pull*'
+      - 'tests/shell/deploy-*'
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch: {}
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: sync-upstream-main
+  group: sync-upstream-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: false
 
 jobs:
+  verify-ops:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Conferir avisos e politicas sem alterar servicos
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n infra/cz-technology/deploy-fork.sh
+          bash tests/shell/politica-de-pull-herdada.test.sh
+          bash tests/shell/deploy-fork-politicas.test.sh
+          node --test tests/shell/deploy-updater.check.mjs
+
   sync:
+    if: github.event_name != 'pull_request'
+    needs: verify-ops
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

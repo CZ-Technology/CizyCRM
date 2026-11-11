@@ -4,9 +4,11 @@ import { z } from "zod";
 
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { fail, ok } from "@/lib/api/wrappers";
+import { lerCorpoComTeto } from "@/lib/api/corpo-com-teto";
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
 import { settingsDoFunil } from "@/lib/leads/campos-exigidos";
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import { customFieldSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -80,7 +82,10 @@ function serializarAnexo(row: {
 
 export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  // LER o anexo é ler o negócio (#3431): quem enxerga o lead enxerga o
+  // documento dele — o `viewer` inclusive. A escrita (POST/DELETE, abaixo)
+  // segue em `agent`: lista é leitura, upload e remoção não são.
+  const authz = await requireRole("viewer", { requestId, resource: "crm_leads" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { id: leadId } = await ctx.params;
@@ -135,7 +140,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { id: leadId } = await ctx.params;
   const orgId = authz.org.orgId;
 
-  const form = await req.formData().catch(() => null);
+  // 1 MB de folga para o envelope multipart; o file.size abaixo é o check do anexo.
+  const corpo = await lerCorpoComTeto(req, MAX_BYTES + 1_048_576, {
+    requestId,
+    idioma: authz.user.idioma,
+    acimaDoTeto: t("O arquivo excede o limite de 50 MB."),
+  });
+  if (!corpo.ok) return corpo.response;
+  const form = await corpo.corpo.formData().catch(() => null);
   if (!form) {
     return fail("validation_failed", t("Requisição multipart inválida."), 400, { requestId });
   }
@@ -246,6 +258,22 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     },
     requestId,
   });
+
+  // A LINHA DO TEMPO (#3316): sem ela, o documento existe no card e some da
+  // história do negócio — quem abre o card uma semana depois não vê quando o
+  // voucher chegou nem que arquivo sustenta a proposta que a IA leu dele.
+  // Fire-and-forget como todo emissor: a timeline não derruba o upload que ela
+  // descreve. O payload é NOME e TIPO do arquivo — nunca o conteúdo.
+  void emitLeadActivity(supabase, {
+    organizationId: orgId,
+    leadId,
+    type: "document_attached",
+    sourceModule: "leads/attachments",
+    sourceId: attachmentId,
+    actor: { type: "user", id: authz.user.id },
+    reason: `Documento anexado ao campo ${campo.label ?? fieldKey}`,
+    payload: { field_key: fieldKey, file_name: file.name, mime_type: file.type },
+  }).catch(() => null);
 
   const attachment = serializarAnexo(inserted, leadId);
 

@@ -126,6 +126,23 @@ export function falhaDoEnvioInteiro(codigo: string | null): boolean {
 }
 
 /**
+ * O provedor ou a plataforma pediram para DESACELERAR: a mensagem não saiu e
+ * não tem defeito nenhum — sai de novo daqui a pouco.
+ *
+ *   - `130429`: a plataforma, no limite de mensagens por segundo do número;
+ *   - `429` do provedor intermediado (`rate_limited`): a janela de requisições
+ *     por minuto da equipe (60, 600 ou 1.200, pelo número de contas).
+ *
+ * `131056` (muitas para a MESMA pessoa) não entra: é por destinatário, e o
+ * adaptador já o devolve como fila (`zernio_throttled`).
+ */
+export function ehLimiteDeVelocidade(codigo: string | null, mensagem: string | null | undefined): boolean {
+  if (codigo === "130429") return true;
+  const texto = mensagem ?? "";
+  return /\brate_limited\b/i.test(texto) || /^zernio_[a-z_]+: 429\b/.test(texto);
+}
+
+/**
  * A frase para quem opera, por código. Em português: a tela traduz na borda
  * (`t()`), como todo texto do produto. Código sem frase própria cai no texto
  * cru que a plataforma mandou — melhor que um "erro desconhecido".
@@ -179,4 +196,36 @@ export function fraseDaFalha(codigo: string | null, textoCru: string | null | un
   if (codigo !== null && Object.hasOwn(FRASES_DA_PLATAFORMA, codigo)) return FRASES_DA_PLATAFORMA[codigo]!;
   const cru = (textoCru ?? "").trim();
   return cru === "" ? null : cru.slice(0, 300);
+}
+
+/**
+ * A ESPERA QUE O CANAL PEDIU antes de tentar de novo.
+ *
+ * O provedor intermediado responde `429` com `Retry-After` quando a plataforma
+ * limita a conta (changelog de 25/09/2026; OpenAPI v1.370.0, `sendInboxMessage`:
+ * "Seconds until the upstream quota resets"). O adapter carimba os segundos no
+ * texto do erro (`[espera:30s]`), como já carimba `[plataforma:NNN]`, e quem
+ * reagenda o envio lê daqui — o número atravessa o seam sem que o envio precise
+ * saber de qual canal veio.
+ */
+const MARCA_DE_ESPERA = /\[espera:(\d{1,6})s\]/;
+
+export function marcaDeEspera(segundos: number | null): string {
+  return segundos !== null && Number.isFinite(segundos) && segundos > 0 ? ` [espera:${Math.ceil(segundos)}s]` : "";
+}
+
+/** Em milissegundos; `null` quando o canal não pediu espera nenhuma. */
+export function esperaPedidaPeloCanal(erro: string | null | undefined): number | null {
+  const achado = MARCA_DE_ESPERA.exec(erro ?? "");
+  return achado ? Number(achado[1]) * 1000 : null;
+}
+
+/** `Retry-After` em segundos — número ou data HTTP. `null` quando ausente ou ilegível. */
+export function segundosDoRetryAfter(valor: string | null | undefined, agora: number = Date.now()): number | null {
+  const bruto = (valor ?? "").trim();
+  if (bruto === "") return null;
+  if (/^\d+$/.test(bruto)) return Number(bruto);
+  const quando = Date.parse(bruto);
+  if (Number.isNaN(quando)) return null;
+  return Math.max(0, Math.ceil((quando - agora) / 1000));
 }

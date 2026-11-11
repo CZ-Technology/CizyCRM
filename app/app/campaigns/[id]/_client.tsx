@@ -23,12 +23,14 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   useAcaoDeCampanha,
   useCampanha,
   useDestinatarios,
   useEditarCampanha,
   useMetricasDaCampanha,
+  useModelosDaCampanha,
   type AcaoDeCampanha,
   type CampanhaDetalhada,
 } from "@/hooks/campanhas/useCampanhas";
@@ -41,6 +43,13 @@ import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { TEXTO_DA_EXCLUSAO } from "@/lib/campanhas/tipos";
 
 import { ModeloDaCampanhaNoDetalhe } from "../_components/ModeloDaCampanhaNoDetalhe";
+import {
+  VelocidadeDaCampanha,
+  minutosParaEnviar,
+  variaveisParaOBroadcast,
+  variaveisQueImpedemOBroadcast,
+  type Velocidade,
+} from "../_components/VelocidadeDaCampanha";
 
 export function DetalheDaCampanha({ id }: { id: string }) {
   const t = useT();
@@ -149,7 +158,16 @@ export function DetalheDaCampanha({ id }: { id: string }) {
         <Card className="space-y-3 border-warning-fg p-4">
           <p className="text-sm">
             {confirmando === "iniciar"
-              ? `${t("Começar a enviar para")} ${c.snapshot_eligible} ${c.snapshot_eligible === 1 ? t("pessoa?") : t("pessoas?")} ${t("O envio segue o ritmo do número e pode levar horas.")}`
+              ? `${t("Começar a enviar para")} ${c.snapshot_eligible} ${c.snapshot_eligible === 1 ? t("pessoa?") : t("pessoas?")} ${
+                  c.velocidade === "transmissao"
+                    ? t("Broadcast: a lista inteira vai para o provedor de uma vez e sai em poucos minutos.")
+                    : c.velocidade === "rapida"
+                      ? t("Envio rápido: sai tudo em cerca de {n} min.").replace(
+                          "{n}",
+                          String(minutosParaEnviar(c.snapshot_eligible ?? 0, "rapida")),
+                        )
+                      : t("O envio segue o ritmo do número e pode levar horas.")
+                }`
               : t(
                   "Cancelar é definitivo: quem ainda não recebeu não recebe mais, e a campanha não volta a rodar.",
                 )}
@@ -437,6 +455,27 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
   const [tetoHora, setTetoHora] = useState(texto(campanha.teto_horario));
   const [inicio, setInicio] = useState(texto(campanha.janela_inicio_hora));
   const [fim, setFim] = useState(texto(campanha.janela_fim_hora));
+  const [velocidade, setVelocidade] = useState<Velocidade>(campanha.velocidade ?? "gradual");
+  const [emBaloes, setEmBaloes] = useState(campanha.split_messages === true);
+  const ehOficial = campanha.message_mode === "template";
+  // O broadcast só existe quando o provedor do número o faz (migration 0712), e
+  // as variáveis que decidem se ele serve são as do modelo desta campanha.
+  const doCanal = useModelosDaCampanha(ehOficial ? campanha.channel_session_id : "");
+  const transmissaoNoNumero = ehOficial && doCanal.data?.transmissao === true;
+  const modeloDaCampanha =
+    doCanal.data?.modelos.find(
+      (m) => m.name === campanha.provider_template_name && m.language === campanha.provider_template_language,
+    ) ?? null;
+  const variaveisDoBroadcast = variaveisParaOBroadcast(modeloDaCampanha, campanha.provider_template_variables);
+  const velocidadeEfetiva: Velocidade = !ehOficial
+    ? "gradual"
+    : velocidade === "transmissao" && !transmissaoNoNumero && !doCanal.isLoading
+      ? "rapida"
+      : velocidade;
+  const emBroadcast = velocidadeEfetiva === "transmissao";
+  const broadcastTravado = emBroadcast && variaveisQueImpedemOBroadcast(variaveisDoBroadcast).length > 0;
+  // A lista já está com o provedor: a velocidade não muda mais (a rota recusa).
+  const listaEntregue = !!campanha.provider_broadcast_id;
 
   const encerrada = campanha.status === "completed" || campanha.status === "cancelled";
   if (encerrada) return null;
@@ -451,26 +490,46 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
           )}
         </p>
       </div>
+      <VelocidadeDaCampanha
+        valor={velocidadeEfetiva}
+        onChange={setVelocidade}
+        ehOficial={ehOficial}
+        nome="r-velocidade"
+        desabilitado={listaEntregue}
+        transmissao={transmissaoNoNumero ? { variaveis: variaveisDoBroadcast } : null}
+      />
+      {listaEntregue && (
+        <p className="text-sm text-muted-foreground" data-testid="broadcast-entregue">
+          {t("A lista já foi entregue ao provedor por broadcast. Para parar o envio, cancele a campanha.")}
+        </p>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
-        <CampoDeRitmo
-          id="r-intervalo"
-          rotulo={t("Intervalo mínimo entre mensagens (segundos)")}
-          valor={intervalo}
-          onChange={setIntervalo}
-        />
-        <CampoDeRitmo
-          id="r-dia"
-          rotulo={t("Máximo por dia")}
-          valor={tetoDia}
-          onChange={setTetoDia}
-        />
-        <CampoDeRitmo
-          id="r-hora"
-          rotulo={t("Máximo por hora")}
-          valor={tetoHora}
-          onChange={setTetoHora}
-        />
-        <div />
+        {velocidadeEfetiva === "gradual" && (
+          <CampoDeRitmo
+            id="r-intervalo"
+            rotulo={t("Intervalo mínimo entre mensagens (segundos)")}
+            valor={intervalo}
+            onChange={setIntervalo}
+          />
+        )}
+        {!emBroadcast && (
+          <CampoDeRitmo
+            id="r-dia"
+            rotulo={t("Máximo por dia")}
+            valor={tetoDia}
+            onChange={setTetoDia}
+          />
+        )}
+        {!emBroadcast && (
+          <CampoDeRitmo
+            id="r-hora"
+            rotulo={t("Máximo por hora")}
+            valor={tetoHora}
+            onChange={setTetoHora}
+          />
+        )}
+        {/* Na rápida, sem o intervalo, os tetos já ocupam a linha inteira. */}
+        {velocidadeEfetiva === "gradual" && <div />}
         <CampoDeRitmo
           id="r-inicio"
           rotulo={t("Enviar só a partir das (hora)")}
@@ -484,17 +543,36 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
           onChange={setFim}
         />
       </div>
+      {/* Modelo aprovado sai como a plataforma aprovou: nunca se divide. */}
+      {!ehOficial && (
+        <div className="flex items-start gap-3">
+          <Switch id="r-baloes" checked={emBaloes} onCheckedChange={setEmBaloes} />
+          <div className="space-y-1">
+            <Label htmlFor="r-baloes">{t("Dividir a mensagem em balões, um por parágrafo")}</Label>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "Até 3 balões por pessoa; o que passar disso vai junto no último. Cada balão conta no limite diário do número.",
+              )}
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <Button
           size="sm"
-          disabled={editar.isPending}
+          disabled={editar.isPending || broadcastTravado}
           onClick={() =>
             editar.mutate({
-              intervalo_segundos: numero(intervalo),
-              teto_diario: numero(tetoDia),
-              teto_horario: numero(tetoHora),
+              // Na rápida o intervalo não vale: a rajada tem o próprio espaçamento.
+              // No broadcast a tela não oferece os máximos da campanha: a lista sai inteira,
+              // e quem freia é o teto diário do número (`tetoDaTransmissao`).
+              intervalo_segundos: velocidadeEfetiva === "gradual" ? numero(intervalo) : null,
+              ...(ehOficial && !listaEntregue ? { velocidade: velocidadeEfetiva } : {}),
+              teto_diario: emBroadcast ? null : numero(tetoDia),
+              teto_horario: emBroadcast ? null : numero(tetoHora),
               janela_inicio_hora: numero(inicio),
               janela_fim_hora: numero(fim),
+              ...(ehOficial ? {} : { split_messages: emBaloes }),
             })
           }
         >

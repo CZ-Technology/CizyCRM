@@ -49,7 +49,7 @@ export const TOOLS_FUNIL = declararTools([
     category: "read",
     rotulo: "Ver a previsão do funil",
     explicacao:
-      "Mostra quanto deve entrar e quando: os negócios abertos somados por moeda e por mês, com a chance de fechamento que cada etapa tem, e à parte o que ainda não tem data nem chance definida.",
+      "Mostra quanto deve entrar e quando: os negócios abertos por moeda e por mês, com a chance de fechamento que cada etapa tem — e com o valor único (setup) e a recorrência nova (mensalidade) em parcelas SEPARADAS, nunca somadas. À parte, o que ainda não tem data nem chance definida.",
     oQueToca: "Funil de vendas",
     risco: "seguro",
     // Leitura GERENCIAL (quanto entra e quando), não passo de venda: o agente
@@ -99,6 +99,19 @@ export const TOOLS_FUNIL = declararTools([
     // "reter", como `crm_propose_reactivation`: é o cliente que voltou depois
     // de uma perda. Em "vender" ela entraria no agente que nasce no onboarding
     // e estouraria o teto dos outros pacotes (pacote-reserva-vaga-da-critica).
+    pacotes: ["reter"],
+  },
+  {
+    name: "crm_propose_lead_fields_from_document",
+    category: "write",
+    rotulo: "Propor dados de um documento para o card",
+    explicacao:
+      "Separa, de um documento que o agente leu (voucher, bilhete, apólice), os valores dos campos do card do negócio como PROPOSTAS — nada é gravado sem que uma pessoa confirme campo a campo, com o trecho do documento à vista.",
+    oQueToca: "Funil de vendas",
+    risco: "atencao",
+    // Pós-venda (o funil "Experiência do Cliente" da issue): quem atende depois
+    // da compra é o agente de retenção, não o de aquisição — em "vender" ela
+    // entraria no agente que nasce no onboarding (pacote-reserva-vaga-da-critica).
     pacotes: ["reter"],
   },
 ]);

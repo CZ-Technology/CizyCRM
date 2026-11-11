@@ -14,14 +14,17 @@ import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useAtRiskLeads } from "@/hooks/leads/useAtRiskLeads";
 import { useReactivations } from "@/hooks/leads/useReactivations";
 import { midpoint } from "@/lib/kanban/fractional-indexing";
+import { ordenarEtapasDoFunil } from "@/lib/kanban/ordem-das-etapas";
 import { posicaoNoFimDaEtapa, proximoNaEtapaInteira } from "@/lib/kanban/vizinho-na-etapa";
+import { compararNaEtapa, posicaoNoTopoDaEtapa } from "@/lib/kanban/entrada-na-etapa";
 import { decideMotivoDaPerda } from "@/lib/leads/motivo-da-perda";
 import type { Lead } from "@/lib/types/leads";
 import type { BoardData, Pipeline, Stage } from "@/lib/kanban/types";
 import { StageColumn } from "./StageColumn";
 import { LeadDossier } from "./LeadDossier";
 import { RetomarComoNovoNegocioDialog } from "./RetomarComoNovoNegocioDialog";
-import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { atalhosDoFunil } from "@/lib/leads/atalhos-do-card";
+import { camposPorEscopo, camposDoFunil } from "@/lib/leads/campos-do-funil";
 
 interface KanbanBoardProps {
   pipelineId: string;
@@ -49,6 +52,14 @@ interface KanbanBoardProps {
    * então o cabeçalho fica só leitura para eles.
    */
   podeRenomearEtapa?: boolean;
+  /** Densidade compacta dos cards (issue #3461, item 2), escolhida na página. */
+  denso?: boolean;
+  /**
+   * Quadro de funil ARQUIVADO (#1298): abre para OLHAR, e nada aqui grava —
+   * sem arrastar card, sem menu de ações, sem seleção em lote e sem dossiê.
+   * É a razão de o funil arquivado ser abrível sem desarquivar.
+   */
+  somenteLeitura?: boolean;
 }
 
 function groupLeadsByStage(stages: Stage[], leads: Lead[]): Map<string, Lead[]> {
@@ -58,9 +69,12 @@ function groupLeadsByStage(stages: Stage[], leads: Lead[]): Map<string, Lead[]> 
     const bucket = map.get(lead.stage_id);
     if (bucket) bucket.push(lead);
   }
-  // Already ordered by position_in_stage at fetch time, but be defensive.
+  // A rota já devolve `position_in_stage, id` — este sort repete a MESMA régua
+  // (com o desempate por `id`) para a tela não depender da ordem de chegada:
+  // sem o desempate, dois cards empatados trocavam de lugar a cada render
+  // (#3461).
   for (const list of map.values()) {
-    list.sort((a, b) => a.position_in_stage - b.position_in_stage);
+    list.sort(compararNaEtapa);
   }
   return map;
 }
@@ -71,7 +85,7 @@ function BoardSkeleton() {
       {[0, 1, 2].map((c) => (
         <div
           key={c}
-          className="flex w-80 shrink-0 flex-col gap-2 rounded-lg border border-border bg-surface-muted/40 p-3"
+          className="flex w-80 shrink-0 flex-col gap-2 rounded-lg border border-border bg-surface-elevated/40 p-3"
         >
           <Skeleton className="h-5 w-32" />
           {[0, 1, 2, 3].map((i) => (
@@ -93,6 +107,8 @@ export function KanbanBoard({
   onSelectionChange,
   leadInicial,
   podeRenomearEtapa = false,
+  denso = false,
+  somenteLeitura = false,
 }: KanbanBoardProps) {
   const t = useT();
   const useExternal = stagesProp !== undefined && leadsProp !== undefined;
@@ -168,18 +184,37 @@ export function KanbanBoard({
         leads: leadsProp,
       }
     : queryResult.data;
+
+  /**
+   * As colunas do quadro, na ordem do funil (#3874).
+   *
+   * A rota já devolve `position` ascendente, e este `sort` NÃO é redundante: é
+   * a régua ÚNICA (`ordenarEtapasDoFunil`) que o seletor de etapa do card usa
+   * também. Enquanto a ordem era só a do array, o quadro e o seletor só
+   * concordavam por coincidência — bastava uma prop vinda de deep link, de
+   * cache antigo ou de outra leitura para o dono reordenar em Configurações e
+   * ver o seletor na ordem velha. Etapa ARQUIVADA fica de fora: ela é
+   * histórico, e o quadro nunca a mostrou (a rota já a filtra).
+   */
+  const etapasDoQuadro = useMemo(
+    () => ordenarEtapasDoFunil(data?.stages ?? []).filter((e) => !e.is_archived),
+    [data?.stages],
+  );
   const isLoading = useExternal ? false : queryResult.isLoading;
   const isError = useExternal ? false : queryResult.isError;
   const error = useExternal ? null : queryResult.error;
 
-  const leadDoDossie = dossieId
-    ? (data?.leads.find((l) => l.id === dossieId) ?? null)
-    : null;
+  // Funil arquivado (#1298): o deep link `?lead=` também não abre o dossiê —
+  // ele tem ações de escrita, e o quadro em leitura não as oferece.
+  const leadDoDossie =
+    dossieId && !somenteLeitura
+      ? (data?.leads.find((l) => l.id === dossieId) ?? null)
+      : null;
 
   const grouped = useMemo(() => {
     if (!data) return null;
-    return groupLeadsByStage(data.stages, data.leads);
-  }, [data]);
+    return groupLeadsByStage(etapasDoQuadro, data.leads);
+  }, [data, etapasDoQuadro]);
 
   // Um conjunto por vez, e não um card por vez: o board recebe o resultado do
   // gesto já resolvido pela coluna (um card, um intervalo, a etapa inteira). A
@@ -226,18 +261,19 @@ export function KanbanBoard({
     [data, moveCard],
   );
 
-  // O menu não tem ponto de soltura: o card vai para o fim da etapa INTEIRA
-  // (cache do quadro, sem o filtro da página — #2545).
+  // O menu não tem ponto de soltura. Quem CHEGA a outra etapa entra no TOPO,
+  // a mesma regra do `moveLeadHandler` sem posição (#3461); a mesma etapa é
+  // reordenação e segue para o fim. As duas pontas leem a etapa INTEIRA (cache
+  // do quadro, sem o filtro da página — #2545).
   const aoMoverPelaLista = useCallback(
     (lead: Lead, stageId: string) => {
       const funil = qc.getQueryData<BoardData>(chaveDoQuadro(pipelineId))?.leads ?? data?.leads ?? [];
+      const etapa = funil.filter((l) => l.stage_id === stageId);
       moverPara({
         leadId: lead.id,
         stageId,
-        positionInStage: posicaoNoFimDaEtapa(
-          funil.filter((l) => l.stage_id === stageId),
-          lead.id,
-        ),
+        positionInStage:
+          stageId === lead.stage_id ? posicaoNoFimDaEtapa(etapa, lead.id) : posicaoNoTopoDaEtapa(etapa, lead.id),
         expectedUpdatedAt: lead.updated_at,
       });
     },
@@ -246,6 +282,8 @@ export function KanbanBoard({
 
   const handleDragEnd = useCallback(
     (result: DropResult) => {
+      // Funil arquivado é leitura: soltar um card não move nada (#1298).
+      if (somenteLeitura) return;
       if (!data || !grouped) return;
       const { source, destination, draggableId } = result;
       if (!destination) return;
@@ -302,7 +340,7 @@ export function KanbanBoard({
         expectedUpdatedAt: lead.updated_at,
       });
     },
-    [data, grouped, moverPara, qc, pipelineId],
+    [data, grouped, moverPara, qc, pipelineId, somenteLeitura],
   );
 
   if (isLoading) {
@@ -322,10 +360,10 @@ export function KanbanBoard({
     return null;
   }
 
-  if (data.stages.length === 0) {
+  if (etapasDoQuadro.length === 0) {
     return (
       <Card className="m-4 p-6 text-sm text-text-muted">
-        {t("Nenhum lead nesta pipeline ainda.")}
+        {t("Nenhum negócio neste funil ainda.")}
       </Card>
     );
   }
@@ -365,7 +403,7 @@ export function KanbanBoard({
           className="flex min-h-full w-max items-stretch gap-3"
           data-faixa-das-etapas
         >
-          {data.stages.map((stage) => (
+          {etapasDoQuadro.map((stage) => (
             <StageColumn
               key={stage.id}
               stage={stage}
@@ -379,10 +417,12 @@ export function KanbanBoard({
               selectedLeadIds={selectedLeadIds}
               onSelectMany={handleSelectMany}
               onOpen={setDossieId}
-              etapas={data.stages}
+              etapas={etapasDoQuadro}
               onMoverPara={aoMoverPelaLista}
               podeRenomear={podeRenomearEtapa}
               onRenomear={(nome) => renameStage.mutate({ stageId: stage.id, name: nome })}
+              denso={denso}
+              somenteLeitura={somenteLeitura}
             />
           ))}
         </div>
@@ -395,11 +435,14 @@ export function KanbanBoard({
           pipelineId={pipelineId}
           fieldDefs={camposPorEscopo(camposDoFunil(data.pipeline.settings ?? null), "negocio")}
           stageName={
-            data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
+            etapasDoQuadro.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"
           }
           ownerNames={ownerNames}
-          etapas={data.stages}
+          etapas={etapasDoQuadro}
           onMudarEtapa={(stageId) => aoMoverPelaLista(leadDoDossie, stageId)}
+          // Os atalhos do card (#3487) saem do `settings` do funil que este
+          // quadro já carregou — nenhuma chamada nova.
+          atalhos={atalhosDoFunil(data.pipeline.settings ?? null)}
         />
       )}
 

@@ -267,15 +267,32 @@ describe("conectarLoginCodex confere a identidade, o plano e o cliente devolvido
     expect(jwtVerify.mock.calls[0]![2]).toMatchObject({ audience: "cliente-registrado" });
   });
 
-  it("conta ChatGPT diferente da que a empresa já tem ligada é recusada, e a ligada fica", async () => {
+  it("reconexão com cliente registrado recusa conta diferente, sem substituir a ligada", async () => {
     vi.mocked(lerLoginCodex).mockResolvedValueOnce({
       ...tokensBons,
-      client_id: "dynamic-client-test",
+      client_id: "cliente-registrado",
+      subject: "conta-ja-ligada",
+    });
+    const r = await conectarLoginCodex({
+      codigo: retornoComCliente(estadoComCliente("cliente-registrado")),
+      codeVerifier: VERIFIER,
+    });
+    expect(r).toEqual({ ok: false, error: "conta_diferente" });
+    expect(guardar).not.toHaveBeenCalled();
+  });
+
+  it("link novo de troca autoriza outra conta e preserva a linha da credencial", async () => {
+    vi.mocked(lerLoginCodex).mockResolvedValueOnce({
+      ...tokensBons,
+      client_id: "cliente-antigo",
       subject: "conta-ja-ligada",
     });
     const r = await conectarLoginCodex({ codigo: retorno("code-bom", estadoPara(ORG, PESSOA)), codeVerifier: VERIFIER });
-    expect(r).toEqual({ ok: false, error: "conta_diferente" });
-    expect(guardar).not.toHaveBeenCalled();
+    expect(r).toEqual({ ok: true });
+    expect(guardar).toHaveBeenCalledTimes(1);
+    expect(guardar.mock.calls[0]![0]).toMatchObject({
+      tokens: { client_id: "dynamic-client-test", subject: "siwc-subject" },
+    });
   });
 
   it("consentimento recusado na OpenAI não chega à troca", async () => {

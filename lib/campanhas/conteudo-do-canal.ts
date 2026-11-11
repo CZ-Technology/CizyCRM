@@ -10,11 +10,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { ApiErrorCode } from "@/lib/api/errors";
-import { modoDeCampanhaDoCanal } from "@/lib/channels/capabilities";
+import { canalTemTransmissao, modoDeCampanhaDoCanal } from "@/lib/channels/capabilities";
 
 import type { VariaveisDaCampanha } from "./modelo";
 import { conferirModeloDaCampanha } from "./modelo-da-conexao";
-import type { ModoDaMensagem } from "./tipos";
+import type { ModoDaMensagem, VelocidadeDaCampanha } from "./tipos";
 
 export interface PedidoDeConteudo {
   message_mode?: ModoDaMensagem | undefined;
@@ -40,7 +40,7 @@ export async function lerModoDoCanal(
   db: SupabaseClient,
   organizationId: string,
   channelSessionId: string,
-): Promise<{ existe: false } | { existe: true; modo: ModoDaMensagem | null }> {
+): Promise<{ existe: false } | { existe: true; modo: ModoDaMensagem | null; transmissao: boolean }> {
   const { data } = await db
     .from("channel_sessions")
     .select("id, provider")
@@ -48,7 +48,8 @@ export async function lerModoDoCanal(
     .eq("id", channelSessionId)
     .maybeSingle();
   if (!data) return { existe: false };
-  return { existe: true, modo: modoDeCampanhaDoCanal((data as { provider?: string | null }).provider) };
+  const provider = (data as { provider?: string | null }).provider;
+  return { existe: true, modo: modoDeCampanhaDoCanal(provider), transmissao: canalTemTransmissao(provider) };
 }
 
 /**
@@ -145,4 +146,100 @@ export async function decidirConteudo(
       provider_template_variables: variaveis,
     },
   };
+}
+
+export type DecisaoDaVelocidade =
+  | { ok: true; velocidade: VelocidadeDaCampanha }
+  | {
+      ok: false;
+      codigo: ApiErrorCode;
+      /** Com marcadores (`{variaveis}`) para a frase ser traduzida inteira; os valores vêm em `valores`. */
+      mensagem: string;
+      status: number;
+      valores?: Record<string, string>;
+    };
+
+/** A frase da recusa já traduzida, com os marcadores trocados pelos valores. */
+export function fraseDaRecusa(
+  recusa: { mensagem: string; valores?: Record<string, string> },
+  traduzir: (texto: string) => string,
+): string {
+  return Object.entries(recusa.valores ?? {}).reduce(
+    (frase, [chave, valor]) => frase.replaceAll(`{${chave}}`, valor),
+    traduzir(recusa.mensagem),
+  );
+}
+
+/**
+ * As variáveis que mudam de pessoa para pessoa (nome, campo do negócio) — as que
+ * a transmissão não sabe mandar: o provedor recebe UM valor por variável, o
+ * mesmo para toda a lista. Texto fixo serve.
+ */
+export function variaveisPorPessoa(variaveis: VariaveisDaCampanha): string[] {
+  return Object.entries(variaveis)
+    .filter(([, fonte]) => fonte.kind !== "fixed")
+    .map(([chave]) => chave)
+    .sort();
+}
+
+/**
+ * A VELOCIDADE SEGUE O CONTEÚDO (migrations 0711 e 0712): rápida e transmissão
+ * só com modelo aprovado, que é o número oficial. Pedir qualquer uma num número
+ * por QR é recusado com a frase; trocar a campanha para um número por QR a
+ * devolve a gradual — a única que ali existe —, em vez de travar a edição no
+ * CHECK.
+ *
+ * A transmissão pede mais duas coisas: que o provedor do número a faça
+ * (capability `transmissao`) e que toda variável seja texto fixo. Uma campanha
+ * que estava em transmissão e trocou para um número sem ela vira rápida — o
+ * envio de uma vez mais próximo do que a pessoa escolheu.
+ */
+export function decidirVelocidade(entrada: {
+  pedida: VelocidadeDaCampanha | undefined;
+  atual: VelocidadeDaCampanha;
+  modo: ModoDaMensagem;
+  /** O provedor do número faz transmissão (capability). */
+  transmissao: boolean;
+  /** De onde sai cada variável do modelo: a transmissão só aceita texto fixo. */
+  variaveis: VariaveisDaCampanha;
+}): DecisaoDaVelocidade {
+  if ((entrada.pedida === "rapida" || entrada.pedida === "transmissao") && entrada.modo !== "template") {
+    return {
+      ok: false,
+      codigo: "campanha_velocidade_do_canal",
+      mensagem:
+        entrada.pedida === "rapida"
+          ? "Envio rápido é só do número oficial, com modelo aprovado: no número por QR a rajada leva ao banimento."
+          : "Broadcast é só do número oficial, com modelo aprovado.",
+      status: 422,
+    };
+  }
+  const velocidade = entrada.modo === "template" ? (entrada.pedida ?? entrada.atual) : "gradual";
+  if (velocidade !== "transmissao") return { ok: true, velocidade };
+
+  if (!entrada.transmissao) {
+    if (entrada.pedida === "transmissao") {
+      return {
+        ok: false,
+        codigo: "campanha_velocidade_do_canal",
+        mensagem: "Este número não faz broadcast: o provedor dele não recebe a lista inteira. Use o envio rápido.",
+        status: 422,
+      };
+    }
+    return { ok: true, velocidade: "rapida" };
+  }
+
+  const porPessoa = variaveisPorPessoa(entrada.variaveis);
+  if (porPessoa.length > 0) {
+    return {
+      ok: false,
+      codigo: "campanha_transmissao_variavel",
+      mensagem:
+        "O broadcast manda o mesmo texto a todos, e este modelo usa dados de cada pessoa ({variaveis}). " +
+        "Escreva um texto fixo nessas variáveis ou use o envio rápido.",
+      status: 422,
+      valores: { variaveis: porPessoa.map((k) => `{{${k}}}`).join(", ") },
+    };
+  }
+  return { ok: true, velocidade };
 }

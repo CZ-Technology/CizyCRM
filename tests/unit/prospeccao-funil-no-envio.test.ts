@@ -271,6 +271,17 @@ describe("criarPegadaDoCandidato", () => {
     expect(linha).toMatchObject({ status: "queued", conversation_id: CONVERSA });
   });
 
+  it("o cadastro do contato vai pela porta `prospeccao`: a ÚNICA conversa é a do canal da campanha", async () => {
+    // Pela porta `manual` o cadastro abria outra conversa no telefone mais
+    // antigo da org, antes da `beginServiceAtOrigin` abrir a da campanha.
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(db, {} as never, ORG, campanha, configOnSend, candidato(1), null);
+
+    expect(m.contato.mock.calls[0]?.[4]).toEqual({ porta: "prospeccao" });
+    expect(m.fronteira).toHaveBeenCalledTimes(1);
+    expect(m.fronteira).toHaveBeenCalledWith({}, ORG, CONTATO, configOnSend.channel_session_id);
+  });
+
   it("idempotente: contato da campanha e negócio que já existem não são criados de novo", async () => {
     const { db } = bancoFalso({ negocioExistente: { id: NEGOCIO } });
     await criarPegadaDoCandidato(
@@ -285,6 +296,59 @@ describe("criarPegadaDoCandidato", () => {
     expect(m.contato).not.toHaveBeenCalled();
     expect(m.negocio).not.toHaveBeenCalled();
     expect(m.fronteira).toHaveBeenCalledTimes(1);
+  });
+
+  // Spec 26 §3.2: o contato NOVO nasce com os links que a busca achou, nas chaves certas.
+  // O website do Instagram cai em `link_instagram` (e não em `link_site`).
+  it("contato novo nasce com os links do candidato nas chaves link_<tipo> (spec 26)", async () => {
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          maps_url: "https://maps.app.goo.gl/clinica1",
+          socials: ["https://www.facebook.com/clinica1"],
+          website: "https://www.instagram.com/clinica1/",
+        },
+      }),
+      null,
+    );
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_facebook: "https://www.facebook.com/clinica1",
+      link_instagram: "https://www.instagram.com/clinica1/",
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+    });
+  });
+
+  // Spec 26 §3.2/§7.1: contato REAPROVEITADO não é tocado na abordagem. Não recria o contato
+  // e não recebe update de links; ficha que já existe só se completa pelo botão.
+  it("contato reaproveitado: não recria o contato e não recebe update de links na abordagem (spec 26 §7.1)", async () => {
+    const { db, chamadas } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          maps_url: null,
+          socials: [],
+          website: "https://www.clinica1.com.br/",
+        },
+      }),
+      CONTATO,
+    );
+    expect(m.contato).not.toHaveBeenCalled();
+    expect(chamadas.some((c) => c.sql.includes("update public.contacts"))).toBe(false);
   });
 });
 
@@ -593,4 +657,49 @@ describe("o negócio que a campanha abre: a regra de `lead.created` RODA (#3072)
     expect(motor.rpcs).toHaveLength(0);
     expect(motor.inserts).toHaveLength(0);
   });
+});
+
+describe("sem WhatsApp (lib/prospecting/whatsapp.ts): o produto tira, e o motivo diz isso", () => {
+  const semZap = (n: number, extra: Record<string, unknown> = {}) =>
+    candidato(n, {
+      data: {
+        name: `Clínica ${n}`,
+        key: `place-${n}`,
+        maps_url: null,
+        socials: [],
+        whatsapp: { existe: false, verificado_em: "2026-11-02T12:00:00Z" },
+      },
+      ...extra,
+    });
+
+  it("triarCandidato: pula com o motivo, sem nem consultar o CRM", async () => {
+    const { db, chamadas } = bancoFalso();
+    expect(await triarCandidato(db, ORG, CAMPANHA, semZap(1))).toEqual({
+      motivo: "Sem WhatsApp neste número.",
+    });
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it.each([
+    { modo: "on_send", config: configOnSend },
+    { modo: "on_start", config: configOnStart },
+  ])(
+    "`$modo`: a desmarcada por não ter WhatsApp vira 'Não abordado' com ESSE motivo, não 'pelo operador'",
+    async ({ config }) => {
+      const { db, chamadas } = bancoFalso();
+      // O preparo já a desmarcou (selected=false); mesmo marcada de volta pela API, não entra.
+      await enfileirarCandidatos(db, {} as never, ORG, campanha, config, [
+        semZap(1, { selected: false }),
+        semZap(2),
+        candidato(3),
+      ]);
+      const puladas = chamadas
+        .filter((c) => c.sql.includes("set status='skipped'"))
+        .map((c) => [c.params[1], c.params[2]]);
+      expect(puladas).toEqual([
+        [uuid(101), "Sem WhatsApp neste número."],
+        [uuid(102), "Sem WhatsApp neste número."],
+      ]);
+    },
+  );
 });

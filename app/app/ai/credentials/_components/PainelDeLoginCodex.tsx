@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   conectarLoginCodex,
@@ -40,24 +41,31 @@ import {
 export function PainelDeLoginCodex({
   url,
   codeVerifier,
+  troca,
   conectado,
   validada,
   siwcAutorizado,
+  podeDesconectar,
 }: {
   url: string;
   codeVerifier: string;
+  troca: { url: string; codeVerifier: string } | null;
   /** Há linha de login nesta empresa? Vem do servidor, já filtrado por módulo. */
   conectado: boolean;
   /** `validated_at` preenchido — a troca (ou a renovação) provou o login. */
   validada: boolean;
   /** A credencial salva autoriza os scopes SIWC para usar a assinatura. */
   siwcAutorizado: boolean;
+  podeDesconectar: boolean;
 }) {
   const t = useT();
+  const router = useRouter();
   const [codigo, setCodigo] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [conectouAgora, setConectouAgora] = useState(false);
+  const [modoTroca, setModoTroca] = useState(false);
   const [pendente, startTransition] = useTransition();
+  const linkAtual = modoTroca && troca ? troca : { url, codeVerifier };
 
   /** As falhas que as actions devolvem — na voz de quem opera a VPS. */
   const NOSSAS_MENSAGENS: Record<string, string> = {
@@ -70,7 +78,9 @@ export function PainelDeLoginCodex({
     identidade_invalida:
       "Não foi possível validar a identidade devolvida pela OpenAI. Gere um link novo e tente conectar outra vez.",
     conta_diferente:
-      "Esta empresa já está vinculada a outra conta ChatGPT. Desconecte a conta atual antes de vincular uma conta diferente.",
+      "Esta empresa já está vinculada a outra conta ChatGPT. Use Trocar conta para autorizar a nova sem interromper o agente.",
+    credencial_em_uso:
+      "Esta conta está vinculada a versões de agentes. Use Trocar conta para preservar os vínculos.",
     registro_incompleto:
       "A OpenAI não concluiu o cadastro desta instalação. Recarregue a tela e tente de novo.",
     host_siwc:
@@ -94,10 +104,12 @@ export function PainelDeLoginCodex({
     setErro(null);
     const limpo = codigo.trim();
     startTransition(async () => {
-      const r = await conectarLoginCodex({ codigo: limpo, codeVerifier });
+      const r = await conectarLoginCodex({ codigo: limpo, codeVerifier: linkAtual.codeVerifier });
       if (r.ok) {
         setConectouAgora(true);
+        setModoTroca(false);
         setCodigo("");
+        router.refresh();
         return;
       }
       if (r.error === "mfa_required") return irAoDesafioDeMfa();
@@ -117,6 +129,7 @@ export function PainelDeLoginCodex({
       const r = await desconectarLoginCodexAgora();
       if (r.ok) {
         setConectouAgora(false);
+        router.refresh();
         return;
       }
       if (r.error === "mfa_required") return irAoDesafioDeMfa();
@@ -141,7 +154,12 @@ export function PainelDeLoginCodex({
           <Label htmlFor="codex-link" className="text-base">
             {t("Link de acesso")}
           </Label>
-          <Input id="codex-link" readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
+          <Input id="codex-link" readOnly value={linkAtual.url} onFocus={(e) => e.currentTarget.select()} />
+          {modoTroca && (
+            <p className="text-sm text-muted-foreground">
+              {t("Entre com a nova conta por este link. A conta atual continua ativa até você concluir a conexão.")}
+            </p>
+          )}
         </div>
 
         <div className="flex items-end gap-3">
@@ -159,7 +177,7 @@ export function PainelDeLoginCodex({
             />
           </div>
           <Button onClick={conectar} disabled={pendente || codigo.trim() === ""}>
-            {t("Conectar")}
+            {t(modoTroca ? "Confirmar troca" : "Conectar")}
           </Button>
         </div>
 
@@ -205,12 +223,30 @@ export function PainelDeLoginCodex({
               ? ` ${t("Ainda sem validação registrada: gere o link de novo e conecte de novo.")}`
               : ""}
           </p>
-          {jaConectado && (
+          {jaConectado && troca && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setModoTroca((atual) => !atual);
+                setCodigo("");
+                setErro(null);
+              }}
+              disabled={pendente}
+            >
+              {t(modoTroca ? "Cancelar troca" : "Trocar conta")}
+            </Button>
+          )}
+          {jaConectado && podeDesconectar && (
             <Button variant="outline" onClick={desconectar} disabled={pendente}>
               {t("Desconectar")}
             </Button>
           )}
         </div>
+        {jaConectado && !podeDesconectar && (
+          <p className="text-sm text-muted-foreground">
+            {t("Esta credencial é usada por versões de agentes. Para mudar a assinatura, use Trocar conta.")}
+          </p>
+        )}
 
         {conectouAgora && (
           <p className="text-sm text-muted-foreground" role="status">

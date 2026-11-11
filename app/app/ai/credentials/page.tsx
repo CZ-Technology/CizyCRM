@@ -72,6 +72,12 @@ export default async function CredentialsPage() {
   const linhaDeLogin = moduloLoginCodex
     ? (todas.find((c) => c.provider === PROVEDOR_POR_ASSINATURA) ?? null)
     : null;
+  const { count: versoesDoLogin, error: erroDasVersoesDoLogin } = linhaDeLogin
+    ? await supabase
+        .from("ai_agent_versions")
+        .select("id", { count: "exact", head: true })
+        .eq("credential_id", linhaDeLogin.id)
+    : { count: 0, error: null };
   const credentials = todas.filter((c) => c.provider !== PROVEDOR_POR_ASSINATURA);
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;
   // O par PKCE DESTA renderização: o link mostrado e o verifier do campo de
@@ -87,6 +93,7 @@ export default async function CredentialsPage() {
   // `state`. Sem segredo utilizável o painel não aparece — um login que
   // ninguém consegue conferir não deve ser oferecido.
   let sessaoPkce: ReturnType<typeof criarSessaoPkce> | null = null;
+  let sessaoPkceTroca: ReturnType<typeof criarSessaoPkce> | null = null;
   let siwcAutorizado = false;
   if (moduloLoginCodex) {
     try {
@@ -110,6 +117,20 @@ export default async function CredentialsPage() {
         ),
         { nonce, ...(clientId ? { clientId } : {}), extAgentHostId: hostId },
       );
+      if (linhaDeLogin) {
+        const nonceTroca = gerarNonceSiwc();
+        sessaoPkceTroca = criarSessaoPkce(
+          emitirEstado(
+            {
+              organizationId: activeOrg.orgId,
+              userId: user.id,
+              authSessionId: CLIENTE_DINAMICO_SIWC,
+            },
+            { segredo: env.INTERNAL_SECRET, agora: new Date(), nonce: nonceTroca },
+          ),
+          { nonce: nonceTroca, extAgentHostId: hostId },
+        );
+      }
     } catch (err) {
       logger.warn("[ai/credentials] login SIWC indisponível (state/host do servidor)", {
         error: err instanceof Error ? err.message : String(err),
@@ -238,9 +259,11 @@ export default async function CredentialsPage() {
         <PainelDeLoginCodex
           url={sessaoPkce.url}
           codeVerifier={sessaoPkce.codeVerifier}
+          troca={sessaoPkceTroca ? { url: sessaoPkceTroca.url, codeVerifier: sessaoPkceTroca.codeVerifier } : null}
           conectado={linhaDeLogin !== null}
           validada={linhaDeLogin?.validated_at != null}
           siwcAutorizado={siwcAutorizado}
+          podeDesconectar={!erroDasVersoesDoLogin && versoesDoLogin === 0}
         />
       )}
       <CredentialsList

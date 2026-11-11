@@ -21,6 +21,7 @@ import { PainelDeLoginCodex } from "@/app/app/ai/credentials/_components/PainelD
 
 const conectar = vi.hoisted(() => vi.fn(async (_entrada: unknown) => ({ ok: true } as const)));
 const desconectar = vi.hoisted(() => vi.fn(async () => ({ ok: true } as const)));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 vi.mock("@/app/actions/settings/conectarLoginCodex", () => ({
   conectarLoginCodex: conectar,
@@ -30,7 +31,7 @@ vi.mock("@/app/actions/settings/conectarLoginCodex", () => ({
 describe("o painel de conexão da empresa", () => {
   it("mostra o aviso SIWC, o campo de colagem e o estado da conta", () => {
     render(
-      <PainelDeLoginCodex url="https://auth.openai.com/api/accounts/authorize?x=1" codeVerifier={"v".repeat(60)} conectado={false} validada={false} siwcAutorizado={false} />,
+      <PainelDeLoginCodex url="https://auth.openai.com/api/accounts/authorize?x=1" codeVerifier={"v".repeat(60)} troca={null} conectado={false} validada={false} siwcAutorizado={false} podeDesconectar={true} />,
     );
     expect(screen.getByTestId("painel-login-codex")).toBeTruthy();
     expect(screen.getByTestId("aviso-login-codex").textContent).toContain(
@@ -45,7 +46,7 @@ describe("o painel de conexão da empresa", () => {
 
   it("diz que a conta conectada é DA EMPRESA e oferece desconectar", () => {
     render(
-      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} conectado={true} validada={true} siwcAutorizado={true} />,
+      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} troca={null} conectado={true} validada={true} siwcAutorizado={true} podeDesconectar={true} />,
     );
     expect(screen.getByTestId("estado-login-codex").textContent).toContain(
       "Conta conectada nesta empresa",
@@ -56,7 +57,7 @@ describe("o painel de conexão da empresa", () => {
 
   it("identifica um login legado que precisa ser reconectado com SIWC", () => {
     render(
-      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} conectado={true} validada={true} siwcAutorizado={false} />,
+      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} troca={null} conectado={true} validada={true} siwcAutorizado={false} podeDesconectar={true} />,
     );
     expect(screen.getByTestId("estado-login-codex").textContent).toContain(
       "ainda não autorizou o uso do plano ChatGPT",
@@ -66,7 +67,7 @@ describe("o painel de conexão da empresa", () => {
 
   it("conecta com o código colado e desconecta pela mesma ação da empresa", async () => {
     render(
-      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} conectado={true} validada={true} siwcAutorizado={true} />,
+      <PainelDeLoginCodex url="u" codeVerifier={"v".repeat(60)} troca={null} conectado={true} validada={true} siwcAutorizado={true} podeDesconectar={true} />,
     );
     await userEvent.type(screen.getByLabelText("Endereço em que o navegador parou"), "abc");
     await userEvent.click(screen.getByRole("button", { name: "Conectar" }));
@@ -76,6 +77,22 @@ describe("o painel de conexão da empresa", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Desconectar" }));
     await vi.waitFor(() => expect(desconectar).toHaveBeenCalled());
+    cleanup();
+  });
+
+  it("troca de conta usa o link novo e preserva a credencial vinculada", async () => {
+    conectar.mockClear();
+    desconectar.mockClear();
+    render(
+      <PainelDeLoginCodex url="link-antigo" codeVerifier={"v".repeat(60)} troca={{ url: "link-novo", codeVerifier: "t".repeat(60) }} conectado={true} validada={true} siwcAutorizado={true} podeDesconectar={false} />,
+    );
+    expect(screen.queryByRole("button", { name: "Desconectar" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Trocar conta" }));
+    expect((screen.getByLabelText("Link de acesso") as HTMLInputElement).value).toBe("link-novo");
+    await userEvent.type(screen.getByLabelText("Endereço em que o navegador parou"), "retorno-novo");
+    await userEvent.click(screen.getByRole("button", { name: "Confirmar troca" }));
+    await vi.waitFor(() => expect(conectar).toHaveBeenCalledWith({ codigo: "retorno-novo", codeVerifier: "t".repeat(60) }));
+    expect(desconectar).not.toHaveBeenCalled();
     cleanup();
   });
 });

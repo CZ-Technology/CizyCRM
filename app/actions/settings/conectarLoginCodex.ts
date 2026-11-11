@@ -159,7 +159,11 @@ export async function conectarLoginCodex(
   }
 
   const credencialAnterior = await lerLoginCodex({ admin, orgId: activeOrg.orgId });
-  if (credencialAnterior?.subject && credencialAnterior.subject !== identidade.subject) {
+  // O link explícito de troca registra um cliente novo para outro workspace.
+  // A credencial antiga permanece ativa até a nova autorização ser validada;
+  // guardarLoginCodex então gira os tokens na MESMA linha referenciada pelos agentes.
+  const trocaDeConta = clientIdEsperado === CLIENTE_DINAMICO_SIWC;
+  if (credencialAnterior?.subject && credencialAnterior.subject !== identidade.subject && !trocaDeConta) {
     return { ok: false, error: "conta_diferente" };
   }
   tokens = {
@@ -207,7 +211,7 @@ export async function conectarLoginCodex(
     organizationId: activeOrg.orgId,
     resourceType: "ai_provider_credential",
     resourceId: gravado.id,
-    metadata: { provedor: "openai-assinatura" },
+    metadata: { provedor: "openai-assinatura", troca_de_conta: trocaDeConta && !!credencialAnterior },
     requestId: hdrs.get("x-request-id"),
     ip: ipDoCliente(hdrs),
     userAgent: hdrs.get("user-agent"),
@@ -238,6 +242,15 @@ export async function desconectarLoginCodexAgora(): Promise<DesconectarLoginCode
     .eq("provider", "openai-assinatura")
     .eq("is_active", true)
     .maybeSingle();
+
+  if (linha?.id) {
+    const { count, error: erroDeUso } = await admin
+      .from("ai_agent_versions")
+      .select("id", { count: "exact", head: true })
+      .eq("credential_id", linha.id);
+    if (erroDeUso) return { ok: false, error: "banco" };
+    if ((count ?? 0) > 0) return { ok: false, error: "credencial_em_uso" };
+  }
 
   const apagou = await desconectarLoginCodex({ admin, orgId: activeOrg.orgId });
   if (!apagou) return { ok: false, error: "banco" };

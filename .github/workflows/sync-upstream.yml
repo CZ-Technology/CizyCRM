@@ -9,13 +9,7 @@ on:
       - 'infra/cz-technology/**'
       - 'tests/shell/*pull*'
       - 'tests/shell/deploy-*'
-  pull_request:
-    paths:
-      - '.github/workflows/sync-upstream.yml'
-      - 'hostgator-setup-kit/_common.sh'
-      - 'infra/cz-technology/**'
-      - 'tests/shell/*pull*'
-      - 'tests/shell/deploy-*'
+  pull_request: {}
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch: {}
@@ -193,3 +187,111 @@ jobs:
           fi
 
 
+  # Candidate validation runs only on GitHub-hosted machines, never on the VPS.
+  validate-types:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Complete typecheck, including tests
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: pnpm typecheck
+
+  validate-static-and-shell:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+      - run: pnpm lint:channels
+      - run: pnpm lint:role-rank
+      - run: pnpm test:shell
+
+  validate-unit:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: All unit projects, one exhaustive shard
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm test:unit --shard=${{ matrix.shard }}/8 --maxWorkers=2
+
+  validate-postgres:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        image: [pgvector/pgvector:pg15, pgvector/pgvector:pg17]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Fetch historical compatibility reference from upstream
+        run: git fetch --no-tags https://github.com/melgarafael/DeskcommCRM.git refs/tags/v1.63.0:refs/tags/v1.63.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Real disposable PostgreSQL, full harness and invariants
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          TEST_DB_IMAGE: ${{ matrix.image }}
+        run: pnpm test:db --maxWorkers=1 --no-file-parallelism

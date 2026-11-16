@@ -1,4 +1,4 @@
-import { contemAssuntoComercialRestrito, comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
+import { contemAssuntoComercialNaSaida, contemAssuntoComercialRestrito, comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
 import { prospectingConversationContext } from "@/lib/prospecting/context";
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
@@ -12,6 +12,7 @@ import {
   type TurnPreview,
 } from './preview';
 import { etiquetarProdutoAposEnvio } from './etiqueta-apos-envio';
+import { textosDoClienteNoHistorico } from './pedido-de-audio';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -142,6 +143,7 @@ import {
   checkpointContentSchema,
   fecharOTurno,
   insertCheckpoint,
+  instrucaoDeFechamentoNoIdioma,
   parseCheckpointText,
   tirarLinkDaReuniao,
   type CheckpointContent,
@@ -221,7 +223,7 @@ import {
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
-import { msAteAJanelaAbrir } from './janela-de-atendimento';
+import { msAteAJanelaAbrir, msAteAJanelaAbrirPulandoFeriado } from './janela-de-atendimento';
 import { turnoDisparaNasMensagens } from './palavra-chave-do-gatilho';
 import { agenteJaRespondeuNoAtendimento } from './agente-ja-respondeu';
 import { enviaAvisoForaDoHorario, portasDeProducao } from './aviso-fora-do-horario';
@@ -231,6 +233,7 @@ import { adiadoPorJanela } from '../pacing/adiados-da-janela';
 import { loadChannelKnobs } from '../pacing/store';
 import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-janela';
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
+import { idiomaDaOrganizacaoDoTurno, montarBlocoDePassagemDoRoteador } from './passagem-do-roteador';
 import { ferramentaDePassagemEntreAgentes } from './transferir-agente';
 import {
   hasOpenCaseForContact,
@@ -329,8 +332,10 @@ import {
 } from '@/lib/ai/decisao/manipulacao';
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
+import { fatosDaOrganizacao } from './fatos-da-organizacao';
 import { fusoDaOrganizacao } from './fuso-da-org';
-import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
+import { blocoDoFeriado, ehFeriadoNacionalNoFuso, lerFeriadoDoTurno } from './feriado-nacional';
+import { blocosNoIdioma, diretivaDeIdioma, ferramentasNoIdioma } from './idioma-do-turno';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -1423,6 +1428,12 @@ export function blocoDoModoDePrevia(kind: TurnPreview['kind']): string {
  *
  * A régua é o que o agente TEM: os dois blocos de ensino nomeiam ferramentas, e
  * nomear uma ferramenta ausente faz o modelo tentar chamá-la.
+ *
+ * ⚠️ O bloco `agendaSystemBlock` (quem MARCA horário) segue em português por
+ * exceção declarada em `idioma-do-turno.ts`: ele é composto ramo a ramo por
+ * `tem(ferramenta)`, e traduzir exige um segundo texto por ramo — trabalho que
+ * não cabe nesta fatia e que o bloco da cadeia (este sim traduzido) cobre no
+ * caminho do turno.
  */
 export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
   const blocos: string[] = [];
@@ -1783,6 +1794,54 @@ export function decidirSeEnfileiraOperador(input: {
 }
 
 /**
+ * MODO ASSISTIDO — o Conversador só gera rascunho e o turno saía sem Operador, então o
+ * card ficava parado no funil. Enfileira `operator_turn` com o MESMO agente que gerou o
+ * rascunho. Isto nunca manda mensagem: no assistido, `maoDoOperador` tira da mão
+ * do Operador toda ferramenta que faz algo sair (`saiSemAprovacao`).
+ * Mesma `sourceEventId` do turno (dedup no retry). Nunca lança.
+ */
+export async function enfileirarOperadorNoAssistido(
+  pool: pg.Pool,
+  log: Logger,
+  job: JobRow,
+  conversationId: string,
+  agente: PublishedAgentConfig,
+): Promise<void> {
+  // Pausado: o operator_turn o barraria de qualquer jeito; não gasta vaga de fila.
+  if (!job.contact_id || agente.pausedAt) return;
+  const disparo = decidirSeEnfileiraOperador({
+    temAgentePublicado: true,
+    papelLigado: agente.operatorEnabled,
+  });
+  if (!disparo.enfileira) {
+    log.info('turno do operador não enfileirado (assistido)', { porque: disparo.porque });
+    return;
+  }
+  try {
+    const { deduped } = await enqueueJob(pool, job.organization_id, {
+      kind: 'operator_turn',
+      leadId: job.contact_id,
+      sourceEventId: job.id,
+      payload: {
+        conversation_id: conversationId,
+        origin_job_id: job.id,
+        agent_id: agente.agentId,
+        trigger: 'assistido',
+      },
+    });
+    log.info('turno do operador enfileirado (assistido)', { deduped });
+  } catch (err) {
+    // Só log, e é deliberado — diferente do catch do enfileiramento do turno
+    // automático, que abre `promise_unfulfilled` na Central: lá o Conversador
+    // FALOU e pode ter prometido algo; aqui ele só escreveu um rascunho, sem
+    // declaração de promessa, então não há compromisso que fique sem dono.
+    log.error('turno do operador NÃO foi enfileirado (assistido; o turno segue)', {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
+}
+
+/**
  * A mensagem que acaba de chegar é uma fonte factual: se ela tem texto, o
  * agente não pode dizer ao cliente que ela veio vazia. Prompt reduz esse erro,
  * mas não é uma barreira de envio — o modelo ainda pode repetir um resumo
@@ -1845,6 +1904,37 @@ export function inboundsNaoRespondidos(messages: readonly LeadContextMessage[]):
 }
 
 /**
+ * O cliente tem alguma coisa esperando resposta? Mesma régua do corte de
+ * `inboundsNaoRespondidos` (a última saída), mas conta QUALQUER entrada — foto,
+ * áudio e figurinha chegam com corpo vazio e continuam sendo o cliente falando.
+ *
+ * Existe à parte porque `inboundsNaoRespondidos` alimenta opt-out, urgência e
+ * passagem, que leem TEXTO; aqui a pergunta é só "tem gente esperando?", e quem a
+ * faz é o veto comercial do follow-up (Spec 34): sem ninguém esperando, o texto
+ * barrado só não sai — não há cliente a avisar nem conversa a passar.
+ */
+export function temMensagemDoClienteSemResposta(messages: readonly LeadContextMessage[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m === undefined) continue;
+    if (m.direction === 'outbound') return false;
+    if (m.direction === 'inbound') return true;
+  }
+  return false;
+}
+
+/** O que o agente lê quando o texto dele foi barrado por valores/negociação e o cliente NÃO espera resposta. */
+const ERRO_COMERCIAL_SEM_PENDENCIA_1 =
+  'Este texto não foi enviado porque toca em valores ou negociação, que são só com a equipe. ' +
+  'Reescreva sem esse assunto, ou termine sem enviar. O cliente não está esperando resposta: ' +
+  'não passe a conversa para a equipe.';
+const ERRO_COMERCIAL_SEM_PENDENCIA_2 =
+  'O texto foi barrado de novo por tocar em valores ou negociação. Termine o turno sem enviar mensagem.';
+const ERRO_HANDOFF_APOS_VETO_COMERCIAL =
+  'O cliente não está esperando resposta e o texto foi barrado por valores ou negociação: ' +
+  'não passe a conversa. Termine sem enviar.';
+
+/**
  * Parâmetros do run que DIFEREM entre inbound (F2-09) e follow-up (F3-03): os ids
  * de envio (de fonte confiável — payload do drain no inbound, row do lead no
  * follow-up, nunca do payload do modelo) e a montagem da mensagem de abertura,
@@ -1893,6 +1983,12 @@ export interface AgentTurnInput {
     compromissosBlock?: string;
     /** O anúncio que o contato clicou (vazio = não veio de anúncio). */
     origemBlock?: string;
+    /**
+     * O aviso da PASSAGEM AUTOMÁTICA do roteador (#4363), já montado — '' quando
+     * a conversa não trocou de agente. Opcional pela razão de `projeta`: quem
+     * monta um ritual à mão (testes, follow-up, resposta de caso) não o calcula.
+     */
+    passagemBlock?: string;
     /** Texto exato da mensagem que acordou este turno inbound. */
     currentInboundText?: string;
     /**
@@ -2480,11 +2576,11 @@ async function escalarComercialAntesDoModelo(
     },
   );
   const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: textos,
-    motivo: { codigo: 'low_confidence', texto: 'Valores e negociação: fora do escopo da IA.' } });
+    motivo: { codigo: 'restricao_comercial', texto: 'Valores e negociação: fora do escopo da IA.' } });
   await performHumanHandoff(pool, { tenantId, leadId: turno.leadId, conversationId: turno.conversationId },
-    { reason: 'low_confidence', conversationSummary: briefing.body,
+    { reason: 'restricao_comercial', conversationSummary: briefing.body,
       inboxTitle: 'Valores e negociação — atendimento humano necessário',
-      passagem: { origem: 'runtime_nativo', motivoCodigo: 'low_confidence', briefing },
+      passagem: { origem: 'runtime_nativo', motivoCodigo: 'restricao_comercial', briefing },
       avisoAoLead: aviso, log });
   log.info('assunto comercial restrito encaminhado sem chamada ao redator', { lead_avisado: aviso.avisado });
   return true;
@@ -2586,8 +2682,9 @@ async function executarTurnoDoAgente(
   // da abertura. Lido aqui pela mesma razão da linha acima: uma query por turno,
   // longe do ponto de uso, para não virar duas respostas para a mesma pergunta.
   // Nunca lança e nunca vem vazio (ver `fuso-da-org.ts`).
-  const fusoDaOrg = await fusoDaOrganizacao(pool, tenantId, runLog);
-
+  // O fuso E o idioma da organização, numa query só (#4260, item 1): o idioma
+  // do turno sai daqui e chega à montagem do system sem consulta nova.
+  const { fuso: fusoDaOrg, idioma: idiomaDaOrg } = await fatosDaOrganizacao(pool, tenantId, runLog);
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
@@ -2860,7 +2957,31 @@ async function executarTurnoDoAgente(
   // A guarda é de TELEMETRIA e degrada ABERTO: se a leitura falhar, `false` e a
   // gravação acontece como antes — nunca se perde a linha por causa dela.
   let decisaoJaGravada = false;
-  if (!preview && routed.routerId !== null) {
+  // #4340 — O NÚMERO SEM ROTEADOR TAMBÉM É UMA DECISÃO DE ROTEAMENTO.
+  //
+  // Quando o agente troca de número, o roteador fica no número arquivado e o
+  // número novo nasce SEM roteador. `resolveTurnAgent` então devolve
+  // `routerId: null` + `outcome: 'no_router'` e o turno segue no agente
+  // publicado do número (o principal) — que é o comportamento certo. O errado
+  // era este `if` antigo (`routed.routerId !== null`): sem roteador, NADA era
+  // gravado, e o painel contava os turnos do número novo como se não houvesse
+  // turno nenhum. Ninguém enxergava o defeito que o cliente reclamou.
+  //
+  // O desfecho é `no_match` porque o CHECK de `outcome` aceita um vocabulário
+  // FECHADO (classified, sticky, reclassified, fallback, no_match,
+  // classifier_failed, transferred) e esta fatia não tem migration. O
+  // discriminador de "número sem roteador" é `router_id is null`: todo
+  // `no_match` de um roteador de verdade carrega o `router_id` dele, porque o
+  // caminho do roteador só grava com ele carregado. `origem` não serve para
+  // isso — o CHECK aceita só 'classificador' e 'acao' — nem `motivo`, fechado
+  // nos três motivos de transferência.
+  // Sem `channel_session_id` não há número a apontar: não se inventa decisão.
+  const numeroSemRoteador =
+    !preview &&
+    routed.routerId === null &&
+    routed.outcome === 'no_router' &&
+    input.channelSessionId !== '';
+  if (!preview && (routed.routerId !== null || numeroSemRoteador)) {
     try {
       decisaoJaGravada = await decisaoDeRoteamentoDoJobJaGravada(
         pool,
@@ -2874,7 +2995,11 @@ async function executarTurnoDoAgente(
       });
     }
     try {
-      if (agentConfig !== null) {
+      // A conversa só ganha agente ativo quando houve ROTEADOR: no número sem
+      // roteador o agente principal não é escolha de intenção, e gravar o
+      // sticky dele aqui inventaria estado para o dia em que o número ganhar
+      // um roteador (#4340).
+      if (agentConfig !== null && routed.routerId !== null) {
         await pool.query(
           `update conversations
            set active_ai_agent_id = $3, active_intent = $4, active_agent_set_at = now()
@@ -2888,6 +3013,17 @@ async function executarTurnoDoAgente(
       // `origem_da_escolha = 'jev'`); o único leitor desta tabela
       // (`app/api/v1/ai/evolution`) conta roteamento, não quem o fez.
       if (!decisaoJaGravada) {
+        // UM registro POR TURNO — dentro da guarda do job, então nem a reexecução
+        // do turno reagendado repete a linha (nunca por mensagem). É `info`, não
+        // `warn`: número sem roteador é o estado NORMAL de quem nunca criou
+        // roteador, e um aviso por turno afogaria os avisos de verdade.
+        if (numeroSemRoteador) {
+          runLog.info('número sem roteador — o turno segue no agente principal (#4340)', {
+            conversation_id: input.conversationId,
+            channel_session_id: input.channelSessionId,
+            agent_id: agentConfig?.agentId ?? null,
+          });
+        }
         await pool.query(
           `insert into ai_router_decisions
            (organization_id, router_id, conversation_id, intent_name, confidence, agent_id, outcome, job_id)
@@ -2899,7 +3035,10 @@ async function executarTurnoDoAgente(
             routed.intentName,
             routed.confidence,
             agentConfig?.agentId ?? null,
-            routed.outcome,
+            // Número sem roteador: não houve nada para casar, e o turno seguiu
+            // no agente principal. `no_match` é o desfecho honesto do
+            // vocabulário fechado — `router_id` nulo diz o motivo.
+            numeroSemRoteador ? 'no_match' : routed.outcome,
             liveJob().id,
           ],
         );
@@ -3173,6 +3312,11 @@ async function executarTurnoDoAgente(
   // rascunho saía em terceira pessoa — "vou avisar o atendente e ele responde".
   // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
   if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
+  // #4260, item 1: o único bloco NOVO é a diretiva de idioma, e ela entra por
+  // último para não deslocar nenhum dos de cima (o prefixo cacheável continua
+  // igual em `pt-BR`). A tradução dos blocos acima acontece DEPOIS da montagem,
+  // numa passada só — ver `blocosNoIdioma`.
+  blocosResidentes.push(diretivaDeIdioma(idiomaDaOrg));
   const openingContext = preview
     ? preview.context
     : await lerContextoDaConversa();
@@ -3201,7 +3345,19 @@ async function executarTurnoDoAgente(
           agentId: agentConfig.agentId,
           vozEnabled: agentConfig.vozEnabled,
           vozQuando: agentConfig.vozQuando,
+          // Voz por agente (#4228): sem chave no agente, `null` e a resolução cai
+          // na voz da organização — o comportamento de antes, byte a byte.
+          vozVoiceId: agentConfig.vozVoiceId ?? null,
           voiceNote: capabilitiesOf(await loadChannelProvider(pool, tenantId, input.channelSessionId)).voiceNote,
+          // #4345: a CONVERSA entra na decisão do `'quando_pede'` — o pedido de
+          // áudio feito duas mensagens atrás continua valendo. A janela é a que
+          // o turno já carregou em `openingContext.context.messages`: nenhuma
+          // consulta nova ao banco, e o `currentInboundText` sempre entra como o
+          // mais recente.
+          inboundTexts: textosDoClienteNoHistorico(openingContext.context.messages, currentInboundText),
+          // Mantido para quem lê um texto só; a decisão de `'quando_pede'` usa
+          // `inboundTexts` (acima).
+          inboundText: currentInboundText,
           inboundType:
             input.inboundMessageId === undefined
               ? null
@@ -3220,6 +3376,12 @@ async function executarTurnoDoAgente(
   // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
   const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
   if (blocoDaVoz) blocosResidentes.push(blocoDaVoz);
+  // #4260, item 1: a passada de idioma vem DEPOIS da montagem — a ordem dos
+  // blocos e o `join` daqui continuam os de antes, e em `pt-BR` cada bloco volta
+  // igual. Mutação local, na mesma lista: o turno não guarda os blocos.
+  blocosNoIdioma(blocosResidentes, idiomaDaOrg).forEach((bloco, indice) => {
+    blocosResidentes[indice] = bloco;
+  });
   const system = blocosResidentes.join('\n\n');
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
@@ -3290,17 +3452,32 @@ async function executarTurnoDoAgente(
    * corpos que o modelo escolhe. O aviso vem ANTES da passagem, que arma o
    * silêncio que a cadeia lê.
    */
+  /**
+   * Quantas vezes, neste turno, o texto do agente foi barrado por valores/negociação
+   * SEM cliente esperando resposta (follow-up que falou de preço por conta própria).
+   * Passa de zero → o turno não passa mais a conversa para a equipe (Spec 34).
+   */
+  let vetosComerciaisSemPendencia = 0;
   const passarComercialParaEquipe = async (code: string) => {
+    // Ninguém perguntou nada: o texto barrado foi invenção do agente. Avisar o
+    // cliente de que "uma pessoa vai assumir" é falar com quem não pediu, e
+    // pausar o automático por isso é perder a conversa. O veto fica registrado
+    // na timeline (`send_vetoed`, pela cadeia) e o agente reescreve ou termina.
+    if (!temMensagemDoClienteSemResposta(openingContext.context.messages)) {
+      vetosComerciaisSemPendencia += 1;
+      return { ok: false as const, error: { code,
+        message: vetosComerciaisSemPendencia >= 2 ? ERRO_COMERCIAL_SEM_PENDENCIA_2 : ERRO_COMERCIAL_SEM_PENDENCIA_1 } };
+    }
     const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
       ...avisoDaEscalacao().base,
       motivo: 'outro',
     });
     const briefing = montarBriefingDaPassagem({ checkpoint: null, pendentesDoCliente: [],
-      motivo: { codigo: 'low_confidence', texto: 'Resposta comercial barrada; valores e negociação são exclusivos da equipe.' } });
+      motivo: { codigo: 'restricao_comercial', texto: 'Resposta comercial barrada; valores e negociação são exclusivos da equipe.' } });
     await performHumanHandoff(pool, { tenantId, leadId, conversationId: input.conversationId },
-      { reason: 'low_confidence', conversationSummary: briefing.body,
+      { reason: 'restricao_comercial', conversationSummary: briefing.body,
         inboxTitle: 'Valores e negociação — atendimento humano necessário',
-        passagem: { origem: 'runtime_nativo', motivoCodigo: 'low_confidence', briefing },
+        passagem: { origem: 'runtime_nativo', motivoCodigo: 'restricao_comercial', briefing },
         avisoAoLead: aviso, log: runLog });
     return { ok: false as const, error: { code,
       message: 'Resposta barrada e necessidade de atendimento humano registrada. Não envie valores nem negocie.' } };
@@ -3554,7 +3731,26 @@ async function executarTurnoDoAgente(
   // attempts (`rescheduleJob`) — quem escreveu 22h é atendido às 8h. O throw é
   // o contrato de `JobSettledError`: o run já dispôs do job, main.ts no-opa.
   if (!preview && liveJob().kind === 'inbound_turn' && agentConfig?.janelaDeAtendimento != null) {
-    const esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, clock());
+    const janela = agentConfig.janelaDeAtendimento;
+    const agora = clock();
+    let esperaMs = msAteAJanelaAbrir(agentConfig.janelaDeAtendimento, agora);
+    // NÃO ATENDER EM FERIADO NACIONAL (#3877, doc de decisão 316, alternativa A).
+    // Opção do agente, DESLIGADA de fábrica: desligada, o feriado é dia comum e
+    // nenhuma consulta extra acontece. Ligada, e com o calendário brasileiro
+    // valendo para a organização (`lerFeriadoDoTurno` devolve `null` para país
+    // fora do Brasil ou leitura que falhou — falha aberta), o feriado conta
+    // como dia fechado: o turno espera a próxima abertura que não é feriado E
+    // o aviso recebe o MESMO fato do dia, para os dois nunca discordarem.
+    let feriadoHoje: boolean | undefined;
+    if (agentConfig.naoAtenderEmFeriadoNacional === true) {
+      const calendario = await lerFeriadoDoTurno(pool, tenantId, agora, janela.timezone, runLog);
+      if (calendario !== null) {
+        feriadoHoje = calendario.hoje;
+        esperaMs = msAteAJanelaAbrirPulandoFeriado(janela, agora, (instante) =>
+          ehFeriadoNacionalNoFuso(instante, janela.timezone),
+        );
+      }
+    }
     if (esperaMs !== null) {
       // O AVISO DE FORA DO HORÁRIO (#1926) — ANTES do adiamento, para sair na
       // hora em que a mensagem chegou. É resposta a quem escreveu primeiro (o
@@ -3572,8 +3768,13 @@ async function executarTurnoDoAgente(
             contactId: leadId,
             channelSessionId: input.channelSessionId,
             texto: agentConfig.avisoForaDoHorario ?? null,
+            // O texto de feriado nacional (#3877): opcional, e o módulo só o
+            // usa quando o dia É feriado na organização — sem a chave, o
+            // aviso é o de sempre, byte a byte.
+            textoDeFeriado: agentConfig.avisoDeFeriadoForaDoHorario ?? null,
             janela: agentConfig.janelaDeAtendimento,
-            agora: clock(),
+            agora,
+            ehFeriadoNacional: feriadoHoje,
           },
         );
         runLog.info(
@@ -3599,6 +3800,7 @@ async function executarTurnoDoAgente(
           agent_id: agentConfig.agentId,
           espera_ms: esperaMs,
           janela: `${agentConfig.janelaDeAtendimento.start}-${agentConfig.janelaDeAtendimento.end}`,
+          feriado_nacional_hoje: feriadoHoje ?? null,
         },
       );
       throw new JobSettledError(
@@ -4168,7 +4370,7 @@ async function executarTurnoDoAgente(
         textoDaOrganizacao(playbook.prompt),
         renderOrgMemory(memoriaEscritaPorPessoas(orgMemory)),
         skillsDaOrganizacao,
-        evidenciasComerciais.contexto(),
+        evidenciasComerciais.materialDaOrganizacao(),
         ...valoresConsultados,
       ],
       ...(historico !== undefined ? { historico } : {}),
@@ -4521,6 +4723,11 @@ async function executarTurnoDoAgente(
         // para que o corpo vazio, as bolhas e a pausa humana meçam o que sai.
         // Ver `formato-whatsapp.ts`.
         const body = formatarParaWhatsApp(corpoDoModelo);
+        // Segundo texto com preço depois de um veto comercial sem cliente esperando:
+        // nem chama a cadeia — o agente já foi avisado e insistir só gasta o turno.
+        if (vetosComerciaisSemPendencia >= 2 && contemAssuntoComercialNaSaida(body)) {
+          return { ok: false, error: { code: 'commercial_requires_human', message: ERRO_COMERCIAL_SEM_PENDENCIA_2 } };
+        }
         // CORPO VAZIO NÃO SAI. Medido ao vivo (2026-09-19): o `gpt-4o-mini`
         // chamou `send_message` várias vezes com corpo que virou vazio e o
         // WhatsApp do cliente recebeu bolhas em branco. O schema garante
@@ -5494,6 +5701,9 @@ async function executarTurnoDoAgente(
     request_human_handoff: tool({
       ...AGENT_TOOL_DEFS.request_human_handoff,
       execute: async (raw) => {
+        if (vetosComerciaisSemPendencia > 0) {
+          return { ok: false, error: { code: 'handoff_bloqueado_apos_veto_comercial', message: ERRO_HANDOFF_APOS_VETO_COMERCIAL } };
+        }
         passouParaAEquipe = true;
         // A conversa vai para a equipe: o robô não fala mais neste turno. O aviso
         // do piso logo abaixo sai pelo canal SEM passar pelos `send` que param a
@@ -5705,6 +5915,9 @@ async function executarTurnoDoAgente(
     rawTools.open_human_case = tool({
       ...AGENT_TOOL_DEFS.open_human_case,
       execute: async (raw) => {
+        if (vetosComerciaisSemPendencia > 0) {
+          return { ok: false, error: { code: 'handoff_bloqueado_apos_veto_comercial', message: ERRO_HANDOFF_APOS_VETO_COMERCIAL } };
+        }
         const parsed = openHumanCaseInputSchema.safeParse(raw);
         if (!parsed.success) {
           return {
@@ -5914,6 +6127,31 @@ async function executarTurnoDoAgente(
                   return resultado;
                 }) as typeof mcpTool.execute,
               };
+              continue;
+            }
+            // Leitura do servidor MCP externo (#2147): o que o sistema da empresa
+            // devolveu — a data do exame na agenda — é fato consultado neste turno.
+            // Sem isto a revisão de promessa não via de onde a data veio e vetava
+            // a resposta certa como compromisso inventado.
+            if (mcp.leiturasRemotas.has(name) && typeof mcpTool.execute === 'function') {
+              const executeOriginal = mcpTool.execute.bind(mcpTool);
+              // Troca o `execute` no PRÓPRIO objeto, sem cópia: a prévia libera a
+              // remota pela identidade do objeto que `pickToolsFromMcp` marcou
+              // (`leitura-remota.ts`), e uma cópia perderia a marca. O objeto é
+              // montado por turno, então a troca não vaza para outro turno.
+              mcpTool.execute = (async (...args: Parameters<typeof executeOriginal>) => {
+                const resultado = await executeOriginal(...args);
+                const descartadas = evidenciasComerciais.registrarLeituraRemota(name, resultado);
+                if (descartadas.length > 0) {
+                  runLog.warn('leitura remota acima do teto da evidência — fora da conferência de promessa', {
+                    ferramenta: name,
+                    descartadas: descartadas.length,
+                    tamanhos: descartadas,
+                  });
+                }
+                return resultado;
+              }) as typeof mcpTool.execute;
+              rawTools[name] = mcpTool;
               continue;
             }
             // Marca a EXECUÇÃO (não só a decisão de chamar) — é isso que o agendaStallGate
@@ -6180,7 +6418,10 @@ async function executarTurnoDoAgente(
     // passo falam com o cliente na ordem em que o modelo as escreveu (`fila-de-envio.ts`).
     const tools = emOrdemDeEscrita(
       envolverFerramentasComTraco(
-        presentationTools,
+        // Descrição no idioma do turno (#4260, item 1). Nome, schema e `execute`
+        // passam intactos: só a prosa muda, e ferramenta sem tradução no
+        // dicionário volta igual (as exceções declaradas em `idioma-do-turno.ts`).
+        ferramentasNoIdioma(presentationTools, idiomaDaOrg),
         // O traço continua por fora: registra tanto o veto do breaker quanto o
         // descarte de ferramentas após a apresentação terminal.
         input.tracoDoTurno?.coletor,
@@ -6340,6 +6581,19 @@ async function executarTurnoDoAgente(
       mcp_tools_no_turno: mcpToolIdsDoTurno.length - cobertasPelaNativaNoTurno,
       cobertas_pela_nativa: cobertasPelaNativaNoTurno,
     });
+    // #4363 — A TROCA AUTOMÁTICA DO ROTEADOR chega ao agente que RECEBE a
+    // conversa: ele precisa saber que herdou o atendimento (e de quem) para se
+    // apresentar e continuar de onde está, no idioma da organização. Só existe
+    // no turno da troca (`reclassified`) — nos demais o bloco é '' e nem a
+    // leitura do locale acontece.
+    const passagemRecebida = 'passagemRecebida' in routed ? (routed.passagemRecebida ?? null) : null;
+    const passagemBlock =
+      passagemRecebida === null
+        ? ''
+        : montarBlocoDePassagemDoRoteador(
+            passagemRecebida,
+            await idiomaDaOrganizacaoDoTurno(pool, tenantId, runLog),
+          );
     const openingBase = input.buildOpening({
       previous: effectivePrevious,
       leadState,
@@ -6349,6 +6603,7 @@ async function executarTurnoDoAgente(
       entregues,
       compromissosBlock,
       origemBlock,
+      passagemBlock,
       formatoDoHistorico: deps.knobs.historyFormat ?? 'json',
       ...(currentInboundText !== null ? { currentInboundText } : {}),
       // #2729 — o autor da mensagem canônica, quando ela é de grupo. Vai junto
@@ -6533,6 +6788,9 @@ async function executarTurnoDoAgente(
         // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
         // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
         agentId: agentConfig?.agentId ?? null,
+        // #4426: na prévia, o run que guarda a pergunta e a resposta do teste.
+        // É o que liga esta linha de custo ao texto que a aba "Execuções" mostra.
+        previewRunId: preview?.runId ?? null,
         // O follow-up é o mesmo turno com o próprio ponto — e por isso com o
         // próprio binding (o seam o lê por `purpose`) e a própria linha de custo.
         // Literais no próprio `purpose:`, de propósito: é aqui que a cerca de
@@ -6712,6 +6970,7 @@ async function executarTurnoDoAgente(
           leadId: leadId || null,
           jobId: job?.id,
           agentId: agentConfig?.agentId ?? null,
+          previewRunId: preview?.runId ?? null,
           purpose: preview ? 'agent_preview' : 'agent_turn',
           system,
           messages: [...openingMessages, ...turn.result.responseMessages, pedidoDeCorrecao],
@@ -7030,15 +7289,22 @@ async function executarTurnoDoAgente(
             : {}),
           ...(reservaDeFormato ? { reservaDeFormato } : {}),
           system,
-          messages: [
-            // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
-            // fez seu trabalho na 1ª chamada e não precisa ir de novo.
-            ...openingTextOnly,
-            ...responseMessages,
-            ...(agendaAtual ? [{ role: 'user' as const, content: agendaAtual }] : []),
-            { role: 'user', content: CHECKPOINT_INSTRUCTION },
-            ...correcao,
-          ],
+          messages: instrucaoDeFechamentoNoIdioma(
+            [
+              // prune: o checkpoint reusa a abertura só como texto — a mídia nativa (cara) já
+              // fez seu trabalho na 1ª chamada e não precisa ir de novo.
+              ...openingTextOnly,
+              ...responseMessages,
+              ...(agendaAtual ? [{ role: 'user' as const, content: agendaAtual }] : []),
+              { role: 'user', content: CHECKPOINT_INSTRUCTION },
+              ...correcao,
+            ],
+            // #4260, item 1: a instrução de fechamento é a última coisa que o
+            // modelo lê no turno e passou a falar o idioma da organização. A
+            // passada vem depois da montagem para a ordem e a identidade da
+            // mensagem não mudarem.
+            idiomaDaOrg,
+          ),
         },
         { registry: deps.registry, log: runLog },
       );
@@ -7462,6 +7728,11 @@ export async function runAgentPreview(
     erro = e;
     throw e;
   } finally {
+    // #4424 — o Testar mostra, turno a turno, as ferramentas que a IA USOU. As
+    // de leitura rodam de verdade na prévia, mas até aqui a lista só existia no
+    // traço gravado no banco; as ações propostas já saíam em `result.proposals`.
+    // Copiar para o resultado é o que leva o dado à tela, sem consulta nova.
+    preview.result.ferramentas = coletor.listar();
     await gravarTracoDoTurno(deps.log, pool, {
       organizationId: preview.organizationId,
       jobId: null,
@@ -7630,6 +7901,8 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         boundary: currentExecutionBoundary() ?? undefined,
         agent: operationAgent,
       });
+      // Depois do rascunho: falha do Operador nunca atrasa o rascunho.
+      await enfileirarOperadorNoAssistido(pool, deps.log, job, payload.conversation_id, operationAgent);
       return;
     }
     if (operationAgent?.pausedAt) return;
@@ -7671,6 +7944,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         currentInboundText,
         currentInboundSender,
         formatoDoHistorico,
+        passagemBlock,
       }) =>
         buildOpeningMessage(
           previous,
@@ -7684,6 +7958,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           currentInboundSender,
           origemBlock,
           formatoDoHistorico,
+          passagemBlock,
         ),
     });
   };

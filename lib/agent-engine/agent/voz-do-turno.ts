@@ -20,8 +20,9 @@ import { chaveDeOrcamentoDaInstalacao } from '@/lib/instalacao/comportamento';
 import { logger } from '@/lib/logger';
 import type { ChannelCapabilities } from '@/lib/channels/types';
 import { formatoDaVozParaCanal, type FormatoDaVoz } from '@/lib/ai/voz/formato';
+import { lerPedidoDeAudio } from './pedido-de-audio';
 
-export type VozQuando = 'nunca' | 'espelhar' | 'sempre';
+export type VozQuando = 'nunca' | 'espelhar' | 'sempre' | 'quando_pede';
 
 export interface ResolverVozDoTurnoInput {
   pool: pg.Pool;
@@ -37,6 +38,27 @@ export interface ResolverVozDoTurnoInput {
   voiceNote: ChannelCapabilities['voiceNote'];
   /** `messages.type` da mensagem inbound que disparou o turno — `null` quando não há (ex.: follow-up proativo). */
   inboundType: string | null;
+  /**
+   * O TEXTO do turno (#4345) — o que o cliente escreveu, já composto por
+   * `corpoDaMensagem` (num áudio, a transcrição; sem transcrição, o marcador
+   * `[audio]`). Mantido para quem tem UM texto só; a decisão multi-turno lê
+   * `inboundTexts`.
+   */
+  inboundText?: string | null;
+  /**
+   * Os textos do cliente na CONVERSA (#4345), do mais antigo ao mais recente,
+   * como `textosDoClienteNoHistorico` devolve — o pedido de áudio feito duas
+   * mensagens atrás continua valendo. Ausente, cai em `[inboundText]`; sem
+   * nenhum dos dois, o turno só pode espelhar o canal.
+   */
+  inboundTexts?: readonly (string | null | undefined)[];
+  /**
+   * A voz PRÓPRIA deste agente (`ai_agents.config.voz_voice_id`, #4228) — a
+   * escolha que a tela do agente grava. `null`/ausente = herda a voz da
+   * organização (`organizations.settings.voz.voice_id`), que é o comportamento
+   * de antes desta fatia, byte a byte.
+   */
+  vozVoiceId?: string | null;
   /**
    * Config do ambiente desta instalação — a MESMA `deps.llmCfg` que o turno
    * já usa para o `runModelCall` de chat. Precisa vir do chamador, não `{}`
@@ -65,9 +87,29 @@ interface VozSettings {
   model_id?: string;
 }
 
-function deveFalar(vozQuando: VozQuando, inboundType: string | null): boolean {
+/**
+ * "O agente fala NESTE turno?" — os quatro comportamentos de `voz_quando`.
+ *
+ * `'quando_pede'` (#4345) é o espelho MAIS a leitura da conversa: fala quando o
+ * cliente mandou áudio (como `'espelhar'`) OU quando pediu áudio por escrito /
+ * avisou que não consegue ler — na mensagem atual OU em qualquer uma das últimas
+ * que o turno carregou. Quem pediu texto vence o espelho — inclusive quando a
+ * correção veio depois do pedido.
+ */
+function deveFalar(
+  vozQuando: VozQuando,
+  inboundType: string | null,
+  inboundTexts: readonly (string | null | undefined)[],
+): boolean {
   if (vozQuando === 'nunca') return false;
   if (vozQuando === 'sempre') return true;
+  if (vozQuando === 'quando_pede') {
+    // A CONVERSA, não a mensagem: o pedido feito duas mensagens atrás continua
+    // valendo, e um "prefiro texto" posterior derruba (lerPedidoDeAudio).
+    const pedido = lerPedidoDeAudio(inboundTexts);
+    if (pedido === 'texto') return false;
+    return pedido === 'audio' || inboundType === 'audio';
+  }
   // 'espelhar': só quando o CLIENTE mandou áudio nesta mensagem.
   return inboundType === 'audio';
 }
@@ -106,7 +148,9 @@ export async function resolverVozDoTurno(
   input: ResolverVozDoTurnoInput,
 ): Promise<VozResolvidaDoTurno | null> {
   if (!input.vozEnabled) return null;
-  if (!deveFalar(input.vozQuando, input.inboundType)) return null;
+  const textosDaConversa =
+    input.inboundTexts ?? (input.inboundText === undefined ? [] : [input.inboundText]);
+  if (!deveFalar(input.vozQuando, input.inboundType, textosDaConversa)) return null;
 
   try {
     const { rows } = await input.pool.query<{ settings: Record<string, unknown> | null }>(
@@ -114,12 +158,18 @@ export async function resolverVozDoTurno(
       [input.tenantId],
     );
     const voz = (rows[0]?.settings?.voz ?? {}) as VozSettings;
-    if (!voz.voice_id) {
+    // A voz do AGENTE vence a da organização; sem ela, cai na da organização —
+    // exatamente o valor que esta função devolvia antes de existir voz por
+    // agente. `trim()` porque um id só com espaço viraria 404 na ElevenLabs e
+    // calaria o turno, quando a resposta certa é herdar.
+    const vozDoAgente = typeof input.vozVoiceId === "string" ? input.vozVoiceId.trim() : "";
+    const voiceId = vozDoAgente !== "" ? vozDoAgente : voz.voice_id;
+    if (!voiceId) {
       // Ninguém escolheu uma voz ainda (não há tela — Fase 7). `voz_enabled`
       // só chega a `true` hoje por quem edita o banco direto, e essa pessoa
       // também não configurou `settings.voz` — não é falha, é "faltou o
       // segundo passo". Loga para quem for depurar, não trava o turno.
-      logger.warn('[voz-do-turno] voz_enabled sem voice_id configurado — respondendo em texto', {
+      logger.warn('[voz-do-turno] voz_enabled sem voice_id (nem do agente, nem da organização) — respondendo em texto', {
         organization_id: input.tenantId,
       });
       return null;
@@ -162,7 +212,7 @@ export async function resolverVozDoTurno(
 
     return {
       apiKey: elevenlabs.apiKey,
-      voiceId: voz.voice_id,
+      voiceId,
       modelId,
       formato: formatoDaVozParaCanal(input.voiceNote),
     };

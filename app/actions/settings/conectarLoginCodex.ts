@@ -247,7 +247,8 @@ export async function desconectarLoginCodexAgora(): Promise<DesconectarLoginCode
     const { count, error: erroDeUso } = await admin
       .from("ai_agent_versions")
       .select("id", { count: "exact", head: true })
-      .eq("credential_id", linha.id);
+      .eq("credential_id", linha.id)
+      .eq("organization_id", activeOrg.orgId);
     if (erroDeUso) return { ok: false, error: "banco" };
     if ((count ?? 0) > 0) return { ok: false, error: "credencial_em_uso" };
   }

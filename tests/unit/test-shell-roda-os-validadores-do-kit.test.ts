@@ -9,7 +9,8 @@
  * faz a próxima saída ficar vermelha.
  */
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -69,7 +70,25 @@ describe("test:shell", () => {
         .split(" && ");
     expect(pedaco("so")).toEqual([`bash ${pesado}`]);
     const juntos = [...pedaco("so"), ...pedaco("menos")];
+    expect(pedaco("menos")).toContain("node --test tests/shell/deploy-updater.check.mjs");
+    expect(pedaco("so")).not.toContain("node --test tests/shell/deploy-updater.check.mjs");
     expect(new Set(juntos).size, "um pedaço repete elo do outro").toBe(juntos.length);
     expect([...juntos].sort()).toEqual([...todos].sort());
+  });
+
+  it("continua recusando um comando Node fora dos testes de shell declarados", () => {
+    const pasta = mkdtempSync(join(tmpdir(), "test-shell-parte-"));
+    try {
+      writeFileSync(join(pasta, "package.json"), JSON.stringify({
+        scripts: { "test:shell": "bash tests/shell/pesado.test.sh && node --test /tmp/injetado.mjs" },
+      }));
+      expect(() => execFileSync("bash", [join(process.cwd(), "scripts/test-shell-parte.sh"), "menos", "tests/shell/pesado.test.sh"], {
+        cwd: pasta,
+        env: { ...process.env, LISTAR: "1" },
+        stdio: "pipe",
+      })).toThrow();
+    } finally {
+      rmSync(pasta, { recursive: true, force: true });
+    }
   });
 });

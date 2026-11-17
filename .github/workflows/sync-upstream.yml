@@ -274,4 +274,16 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
           TEST_DB_IMAGE: ${{ matrix.image }}
-        run: pnpm test:db --maxWorkers=1 --no-file-parallelism
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          pnpm test:db --maxWorkers=1 --no-file-parallelism 2>&1 | tee "$log"
+          codes=("${PIPESTATUS[@]}")
+          status="${codes[0]}"
+          if [ "$status" -eq 0 ]; then status="${codes[1]}"; fi
+          if [ "$status" -ne 0 ]; then
+            bash scripts/ci-db-annotation.sh "$log" "$status"
+          fi
+          exit "$status"

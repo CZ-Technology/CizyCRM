@@ -60,5 +60,9 @@ describe("CI ativo do fork", () => {
     const banco = job("validate-postgres");
     expect(banco).toContain("image: [pgvector/pgvector:pg15, pgvector/pgvector:pg17]");
     expect(banco).toContain("pnpm test:db --maxWorkers=1 --no-file-parallelism");
+    expect(banco).toContain("GH_TOKEN: ${{ github.token }}");
+    expect(banco).toContain('codes=("${PIPESTATUS[@]}")');
+    expect(banco).toContain('bash scripts/ci-db-annotation.sh "$log" "$status"');
+    expect(banco).toContain('exit "$status"');
   });
 });

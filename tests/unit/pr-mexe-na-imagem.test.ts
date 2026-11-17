@@ -30,7 +30,7 @@ describe("pr-mexe-na-imagem", () => {
     ["public/logo.png"],
     ["lib/agent-engine/playbooks/platform.md"],
     ["supabase/baseline.sql"],
-    ["tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"],
+    [".github/workflows/publish-image.yml"],
     [".github/algum/script.ts"],
   ])("%s → constrói", (caminho) => {
     expect(responde(["docs/leia.md", caminho])).toBe("sim");
@@ -38,6 +38,14 @@ describe("pr-mexe-na-imagem", () => {
 
   it("entrada vazia constrói — não saber o que mudou nunca vira 'pula'", () => {
     expect(responde([])).toBe("sim");
+  });
+
+  it.each([
+    "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml",
+    "tests/fixtures/upstream-workflows/v1.113.0/ci.yml",
+    ".github/workflows/sync-upstream.yml",
+  ])("%s não alcança o contexto das imagens", (caminho) => {
+    expect(responde([caminho])).toBe("nao");
   });
 
   it("PR só de documentação, teste, fragmento e workflow alheio pula", () => {

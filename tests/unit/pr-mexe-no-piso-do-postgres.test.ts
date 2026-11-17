@@ -22,7 +22,7 @@ describe("pr-mexe-no-piso-do-postgres", () => {
     ["tests/invariants/isolamento-rls.test.ts"],
     ["hostgator-setup-kit/install.sh"],
     ["hostgator-setup-kit/update.sh"],
-    ["tests/fixtures/upstream-workflows/v1.113.0/ci.yml"],
+    [".github/workflows/ci.yml"],
     ["scripts/pr-mexe-no-piso-do-postgres.sh"],
   ])("%s → roda as duas majors", (caminho) => {
     expect(responde(["docs/leia.md", caminho])).toBe("sim");
@@ -43,7 +43,9 @@ describe("pr-mexe-no-piso-do-postgres", () => {
         "tests/e2e/leads.spec.ts",
         "docs/runbooks/deploy.md",
         ".changes/fragmento.md",
+        "tests/fixtures/upstream-workflows/v1.113.0/ci.yml",
         "tests/fixtures/upstream-workflows/v1.113.0/e2e.yml",
+        ".github/workflows/sync-upstream.yml",
         "package.json",
       ]),
     ).toBe("nao");

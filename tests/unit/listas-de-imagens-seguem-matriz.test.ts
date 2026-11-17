@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const RAIZ = process.cwd();
-const publish = readFileSync(join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
+const publish = readFileSync(join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"), "utf8");
 const common = readFileSync(join(RAIZ, "hostgator-setup-kit/_common.sh"), "utf8");
 const manifestos = readFileSync(join(RAIZ, "hostgator-setup-kit/_manifestos.sh"), "utf8");
 const tagSoNasceDaMain = readFileSync(join(RAIZ, "tests/unit/tag-so-nasce-da-main.test.ts"), "utf8");

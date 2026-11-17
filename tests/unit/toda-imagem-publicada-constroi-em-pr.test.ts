@@ -26,7 +26,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const WORKFLOW = ".github/workflows/publish-image.yml";
+const WORKFLOW = "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml";
 const yml = readFileSync(WORKFLOW, "utf8");
 
 /**

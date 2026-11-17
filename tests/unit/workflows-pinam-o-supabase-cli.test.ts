@@ -3,7 +3,7 @@
  *
  * ## O defeito
  *
- * `.github/workflows/e2e.yml` instalava o CLI com `version: latest`. O run
+ * `tests/fixtures/upstream-workflows/v1.113.0/e2e.yml` instalava o CLI com `version: latest`. O run
  * deixava de ser determinístico: o `latest` do registry no minuto do run é
  * quem decide qual stack sobe — PostgREST, GoTrue, Storage, Realtime — e o e2e
  * exercita exatamente esse stack. Uma release upstream muda o produto sob
@@ -51,7 +51,9 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const RAIZ = path.resolve(__dirname, "../..");
-const DIR_WORKFLOWS = path.join(RAIZ, ".github/workflows");
+// O fork não instala o CLI em seu workflow único; conserva este contrato do
+// upstream como fixture explícita, sem fingir que é CI ativo do fork.
+const DIR_WORKFLOWS = path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0");
 
 /** Versão exata: três números e nada mais. `v2.117.0` passa; `latest`, `^2.117.0`, `2.117` e `2.x` não. */
 const VERSAO_EXATA = /^v?\d+\.\d+\.\d+$/;
@@ -182,7 +184,7 @@ function lerWorkflows(): { arquivo: string; linhas: string[] }[] {
     .filter((f) => /\.ya?ml$/.test(f))
     .sort()
     .map((f) => ({
-      arquivo: `.github/workflows/${f}`,
+      arquivo: `tests/fixtures/upstream-workflows/v1.113.0/${f}`,
       linhas: fs.readFileSync(path.join(DIR_WORKFLOWS, f), "utf8").split("\n"),
     }));
 }
@@ -213,7 +215,7 @@ describe("o CLI do Supabase é instalado em versão exata nos workflows", () => 
       "nenhuma instalação do CLI encontrada: se o CI deixou de instalar o CLI, ajuste esta guarda DE PROPÓSITO",
     ).toBeGreaterThan(0);
     expect(
-      todas.some((a) => a.arquivo === ".github/workflows/e2e.yml"),
+      todas.some((a) => a.arquivo === "tests/fixtures/upstream-workflows/v1.113.0/e2e.yml"),
       "o e2e é quem sobe o stack local da suíte; ele tem de instalar o CLI em algum lugar",
     ).toBe(true);
   });

@@ -27,7 +27,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-const E2E = path.resolve(__dirname, "../../.github/workflows/e2e.yml");
+const E2E = path.resolve(__dirname, "../../tests/fixtures/upstream-workflows/v1.113.0/e2e.yml");
 
 function scriptDoPasso(): string {
   const linhas = readFileSync(E2E, "utf-8").split("\n");

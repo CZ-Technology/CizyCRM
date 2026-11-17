@@ -78,6 +78,7 @@ export default async function CredentialsPage() {
         .from("ai_agent_versions")
         .select("id", { count: "exact", head: true })
         .eq("credential_id", linhaDeLogin.id)
+        .eq("organization_id", activeOrg.orgId)
     : { count: 0, error: null };
   const credentials = todas.filter((c) => c.provider !== PROVEDOR_POR_ASSINATURA);
   const canWrite = ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin;

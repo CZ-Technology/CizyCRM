@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 
 // Sem parser YAML nas dependências: recorte do primeiro `run: |` do job `invariants`.
 function scriptDoAgregador(): string {
-  const linhas = readFileSync(".github/workflows/ci.yml", "utf-8").split("\n");
+  const linhas = readFileSync("tests/fixtures/upstream-workflows/v1.113.0/ci.yml", "utf-8").split("\n");
   const job = linhas.findIndex((l) => l === "  invariants:");
   const run = linhas.findIndex((l, i) => i > job && /^\s+run: \|$/.test(l));
   const indent = (linhas[run + 1] ?? "").match(/^\s*/)![0].length;

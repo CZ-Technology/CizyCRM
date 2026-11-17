@@ -44,6 +44,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const DIR = join(process.cwd(), ".github/workflows");
+const FIXTURE_UPSTREAM = join(process.cwd(), "tests/fixtures/upstream-workflows/v1.113.0");
 
 /**
  * Escopos de ESCRITA aceitos hoje, com a razão escrita ao lado.
@@ -52,6 +53,8 @@ const DIR = join(process.cwd(), ".github/workflows");
  * acrescente, e acrescentar sem razão é visível em code review.
  */
 const ESCRITA_JUSTIFICADA: Record<string, string> = {
+  "sync-upstream.yml::contents: write":
+    "somente o job sync em push na main, schedule ou dispatch publica o merge/release; o job é excluído de pull_request",
   "publish-image.yml::packages: write":
     "publica a imagem do app no GHCR — é o artefato que o self-hoster instala",
   "vigia-de-colisao.yml::pull-requests: write":
@@ -71,11 +74,11 @@ interface Workflow {
   jobs: { nome: string; linha: number; temPermissions: boolean }[];
 }
 
-function lerWorkflows(): Workflow[] {
-  return readdirSync(DIR)
+function lerWorkflows(dir = DIR): Workflow[] {
+  return readdirSync(dir)
     .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
     .map((arquivo) => {
-      const linhas = readFileSync(join(DIR, arquivo), "utf8").split("\n");
+      const linhas = readFileSync(join(dir, arquivo), "utf8").split("\n");
       // Comentário não conta: um `#` mencionando `permissions:` não pode satisfazer
       // o gate. Este arquivo tem comentários longos justamente sobre permissions.
       const efetivas = linhas.map((l) => (l.trimStart().startsWith("#") ? "" : l));
@@ -115,13 +118,16 @@ describe("workflows declaram o privilégio do GITHUB_TOKEN", () => {
     // `jobs:` com comentário na mesma linha), as asserções seguintes passam por
     // vacuidade — lista vazia satisfaz "todo elemento da lista".
     const ws = lerWorkflows();
-    expect(ws.length, "workflows lidos em .github/workflows").toBeGreaterThanOrEqual(4);
+    expect(ws.map((w) => w.arquivo), "o fork mantém apenas o workflow de sync e validação").toEqual([
+      "sync-upstream.yml",
+    ]);
+    expect(lerWorkflows(FIXTURE_UPSTREAM).length, "snapshot upstream explícito").toBeGreaterThanOrEqual(4);
     const totalJobs = ws.reduce((n, w) => n + w.jobs.length, 0);
     expect(totalJobs, "jobs encontrados no total").toBeGreaterThanOrEqual(5);
   });
 
   it("todo job tem permissions — no job ou no topo do workflow", () => {
-    const semGuarda = lerWorkflows()
+    const semGuarda = [...lerWorkflows(), ...lerWorkflows(FIXTURE_UPSTREAM)]
       .flatMap((w) =>
         w.jobs
           .filter((j) => !j.temPermissions && !w.temPermissionsNoTopo)
@@ -135,7 +141,7 @@ describe("workflows declaram o privilégio do GITHUB_TOKEN", () => {
   });
 
   it("escopo de escrita só existe com justificativa escrita aqui", () => {
-    const naoJustificados = lerWorkflows()
+    const naoJustificados = [...lerWorkflows(), ...lerWorkflows(FIXTURE_UPSTREAM)]
       .flatMap((w) =>
         w.linhas
           .filter((l) => !l.trimStart().startsWith("#"))

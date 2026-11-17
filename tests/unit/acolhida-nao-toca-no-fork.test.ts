@@ -3,7 +3,7 @@
  *
  * ## O que está sendo vigiado, e por que este arquivo existe
  *
- * `.github/workflows/acolhida.yml` roda em `pull_request_target`. Esse gatilho é a
+ * `tests/fixtures/upstream-workflows/v1.113.0/acolhida.yml` roda em `pull_request_target`. Esse gatilho é a
  * única maneira de comentar num PR de fork — o `GITHUB_TOKEN` de `pull_request` em
  * fork é read-only — e ele vem com o preço: o job roda no contexto da BASE, com os
  * SEGREDOS do repositório e com permissão de escrita, disparado por quem é de fora.
@@ -49,7 +49,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-const ARQUIVO = join(process.cwd(), ".github/workflows/acolhida.yml");
+const ARQUIVO = join(process.cwd(), "tests/fixtures/upstream-workflows/v1.113.0/acolhida.yml");
 const LINHAS = readFileSync(ARQUIVO, "utf8").split("\n");
 
 /**

@@ -45,8 +45,8 @@ import { describe, expect, it } from "vitest";
  * passo verdadeiro; lá se guarda o efeito.
  */
 const RAIZ = process.cwd();
-const publish = readFileSync(join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
-const release = readFileSync(join(RAIZ, ".github/workflows/release.yml"), "utf8");
+const publish = readFileSync(join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"), "utf8");
+const release = readFileSync(join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/release.yml"), "utf8");
 
 /**
  * O corpo de um job, do cabeçalho até o próximo job.

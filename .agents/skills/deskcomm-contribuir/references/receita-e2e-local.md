@@ -1,6 +1,6 @@
 # Rodar uma spec de tela na sua máquina — a receita do CI, passo a passo
 
-O CI (`.github/workflows/e2e.yml`) sobe um Supabase local, aplica o `baseline.sql` (o mesmo que o
+O CI histórico do upstream (`tests/fixtures/upstream-workflows/v1.113.0/e2e.yml`) subia um Supabase local, aplicava o `baseline.sql` (o mesmo que o
 `install.sh` aplica numa VPS), constrói o app em modo produção e roda as specs Playwright em três
 partes. Esta página é a mesma receita, para uma pessoa, uma spec de cada vez. Nenhum documento do
 repositório a descrevia fora do próprio workflow — se algo aqui divergir do `e2e.yml`, vale o
@@ -84,9 +84,9 @@ O `playwright.config.ts` sobe o app (`next start`) sozinho. Falhou? `--trace on`
   exato, contagem — "o elemento existe" não prova nada.
 - Evidência versionada em `evidence/` (não em `.superpowers/`, que é ignorado pelo git).
 - Registre a jornada em `docs/testing/user-journey-map.md` com prioridade (`[P0]` primeira impressão).
-- A spec nova entra em `SPECS_PARTE_N` do `.github/workflows/e2e.yml` — ou em `FORA_DO_CI` com o
-  motivo escrito, se depender de WAHA/Resend/Nuvemshop/Redis reais. O teste
-  `tests/unit/e2e-cobertura-completa.test.ts` reprova spec órfã.
+- A fixture `tests/fixtures/upstream-workflows/v1.113.0/e2e.yml` preserva a lista histórica
+  de specs do upstream; não a altere para declarar execução inexistente no fork. Uma spec nova
+  deve registrar a lacuna de E2E do fork até haver um job ativo revisado.
 - `pnpm typecheck` depois de escrever (a spec é TypeScript e o typecheck cobre `tests/`).
 
 ## 6. Quando não dá

@@ -39,7 +39,8 @@ import {
 } from "@/lib/event-log/drain-loop";
 
 const RAIZ = join(__dirname, "..", "..");
-const FLUXO = readFileSync(join(RAIZ, ".github", "workflows", "publish-image.yml"), "utf8");
+// Mede o contrato histórico de publicação upstream; este fork não ativa o fluxo.
+const FLUXO = readFileSync(join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"), "utf8");
 const SONDA = readFileSync(join(RAIZ, "scripts", "sonda-do-laco-de-event-log.ts"), "utf8");
 const JOB_DE_FUNDO = "imagens-de-fundo-sobem";
 

@@ -74,7 +74,7 @@ pega o que ele deixa passar, mas só depois do push.
 > e fica como está. O que fica fora hoje não se lê deste documento — meça:
 >
 > ```bash
-> git show origin/main:.github/workflows/e2e.yml | \
+> cat tests/fixtures/upstream-workflows/v1.113.0/e2e.yml | \
 >   python3 -c "import sys,re; y=sys.stdin.read(); print(sorted({s for _,c in re.findall(r'(FORA_DO_CI):\s*>-\n((?:[ ]{8,}.*\n)+)',y) for s in re.findall(r'[a-z0-9-]+\.spec\.ts',c)}))"
 > ```
 

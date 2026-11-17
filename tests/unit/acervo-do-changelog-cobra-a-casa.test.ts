@@ -47,7 +47,7 @@ import type { Fragmento } from "@/lib/release/fragmento";
 const RAIZ = process.cwd();
 const RAW = fs.readFileSync(path.join(RAIZ, "CHANGELOG.md"), "utf8");
 const AGENT_SH = fs.readFileSync(path.join(RAIZ, "hostgator-setup-kit", "agent.sh"), "utf8");
-const CI = fs.readFileSync(path.join(RAIZ, ".github/workflows/ci.yml"), "utf8");
+const CI = fs.readFileSync(path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/ci.yml"), "utf8");
 const PKG = JSON.parse(fs.readFileSync(path.join(RAIZ, "package.json"), "utf8")) as {
   scripts: Record<string, string>;
 };

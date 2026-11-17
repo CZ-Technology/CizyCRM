@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-const CI = readFileSync(".github/workflows/ci.yml", "utf-8");
+const CI = readFileSync("tests/fixtures/upstream-workflows/v1.113.0/ci.yml", "utf-8");
 const PKG = JSON.parse(readFileSync("package.json", "utf-8")) as { scripts: Record<string, string> };
 
 function blocoDoJob(job: string): string {

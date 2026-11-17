@@ -10,8 +10,8 @@ import { describe, expect, it } from "vitest";
  * propriedades que impedem que ela vire uma porta aberta.
  */
 const RAIZ = process.cwd();
-const publish = fs.readFileSync(path.join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
-const release = fs.readFileSync(path.join(RAIZ, ".github/workflows/release.yml"), "utf8");
+const publish = fs.readFileSync(path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"), "utf8");
+const release = fs.readFileSync(path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/release.yml"), "utf8");
 
 /** As linhas de um job, até o próximo job na mesma indentação. */
 function job(yml: string, nome: string): string {

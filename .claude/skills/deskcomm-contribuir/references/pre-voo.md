@@ -108,8 +108,9 @@ que passou por uma bateria que o esperava reprovar. Lei em
 substitui a prova pela tela.
 
 ### Spec e2e nova
-Entra em `SPECS_PARTE_N` do `.github/workflows/e2e.yml`, ou em `FORA_DO_CI` **com o motivo escrito**
-(`grep -ciE "waha|resend|nuvemshop|redis" <spec>` diz se ela depende de serviço que o CI não tem).
+No upstream, entrava em `SPECS_PARTE_N` de `tests/fixtures/upstream-workflows/v1.113.0/e2e.yml`, ou em `FORA_DO_CI` **com o motivo escrito**.
+No fork a fixture é histórica; reporte a ausência do job E2E antes de declarar cobertura.
+`grep -ciE "waha|resend|nuvemshop|redis" <spec>` indica se a spec depende de serviço externo.
 
 ### Identidade dos commits
 `root@vps…`, `@localhost`, e-mail vazio: o GitHub não associa a conta nenhuma. Antes do push:

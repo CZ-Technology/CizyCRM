@@ -22,7 +22,7 @@ import { describe, expect, it } from "vitest";
 // Sem parser YAML nas dependências (mesma constatação de
 // workflows-tem-permissions.test.ts): recorte por indentação + controle positivo.
 function scriptDoImagensOk(): string {
-  const linhas = readFileSync(".github/workflows/publish-image.yml", "utf-8").split("\n");
+  const linhas = readFileSync("tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml", "utf-8").split("\n");
   const job = linhas.findIndex((l) => l === "  imagens-ok:");
   const run = linhas.findIndex((l, i) => i > job && /^\s+run: \|$/.test(l));
   const indent = (linhas[run + 1] ?? "").match(/^\s*/)![0].length;

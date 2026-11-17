@@ -29,12 +29,14 @@ const {
   createClientMock,
   moduloLigadoMock,
   criarSessaoPkceMock,
+  filtrosVersao,
 } = vi.hoisted(() => ({
   requireAuthMock: vi.fn(),
   resolveActiveOrgMock: vi.fn(),
   createClientMock: vi.fn(),
   moduloLigadoMock: vi.fn(),
   criarSessaoPkceMock: vi.fn(),
+  filtrosVersao: [] as Array<[string, unknown]>,
 }));
 
 vi.mock("@/lib/auth/server", () => ({
@@ -56,7 +58,9 @@ vi.mock("@/lib/ai/credenciais/host-siwc", () => ({ lerOuCriarHostIdSiwc: async (
 vi.mock("@/lib/agenda/google/estado", () => ({ emitirEstado: () => "estado-assinado" }));
 vi.mock("./_components/CredentialsList", () => ({ CredentialsList: () => null }));
 vi.mock("./_components/PainelDeLoginCodex", () => ({
-  PainelDeLoginCodex: () => <div data-testid="painel-login-codex" />,
+  PainelDeLoginCodex: ({ podeDesconectar }: { podeDesconectar: boolean }) => (
+    <div data-testid="painel-login-codex" data-pode-desconectar={String(podeDesconectar)} />
+  ),
 }));
 
 import CredentialsPage from "./page";
@@ -133,5 +137,50 @@ describe("#4438 IA › Credenciais — a tela diz que a assinatura do ChatGPT ex
       screen.queryByTestId("aviso-login-codex-desligado"),
       "o aviso apareceu com o recurso LIGADO — quem já usa o recurso veria um aviso de recurso desligado",
     ).toBeNull();
+  });
+});
+
+describe("a tela de credenciais conta versões só da organização ativa", () => {
+  const OUTRA_ORG = "44444444-4444-4444-8444-444444444444";
+
+  async function renderizarComVersoes(versoes: string[]) {
+    preparar({ ligado: true });
+    filtrosVersao.length = 0;
+    const cliente = clienteDeTeste({
+      ai_provider_credentials_safe: [{ id: "credencial-teste", provider: "openai-assinatura", organization_id: ORG }],
+      organizations: { settings: {} },
+    });
+    createClientMock.mockReturnValue({
+      from: (tabela: string) => {
+        if (tabela !== "ai_agent_versions") return cliente.from(tabela);
+        const consulta = {
+          select: () => consulta,
+          eq: (coluna: string, valor: unknown) => {
+            filtrosVersao.push([coluna, valor]);
+            return consulta;
+          },
+          then: (resolve: (resultado: { count: number; error: null }) => unknown) => {
+            const orgFiltrada = filtrosVersao.find(([coluna]) => coluna === "organization_id")?.[1];
+            const count = versoes.filter((org) => orgFiltrada === undefined || org === orgFiltrada).length;
+            return resolve({ count, error: null });
+          },
+        };
+        return consulta;
+      },
+    });
+    render(await CredentialsPage());
+    return screen.getByTestId("painel-login-codex");
+  }
+
+  it("versão de outra empresa não bloqueia o botão de desconexão", async () => {
+    const painel = await renderizarComVersoes([OUTRA_ORG]);
+    expect(filtrosVersao).toContainEqual(["credential_id", "credencial-teste"]);
+    expect(filtrosVersao).toContainEqual(["organization_id", ORG]);
+    expect(painel).toHaveAttribute("data-pode-desconectar", "true");
+  });
+
+  it("versão da empresa ativa continua bloqueando o botão de desconexão", async () => {
+    const painel = await renderizarComVersoes([OUTRA_ORG, ORG]);
+    expect(painel).toHaveAttribute("data-pode-desconectar", "false");
   });
 });

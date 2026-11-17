@@ -68,7 +68,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const RAIZ = process.cwd();
-const CAMINHO = ".github/workflows/e2e.yml";
+const CAMINHO = "tests/fixtures/upstream-workflows/v1.113.0/e2e.yml";
 const workflow = readFileSync(join(RAIZ, CAMINHO), "utf8");
 
 // ─────────────────────────────────────────────────────────────────────────────

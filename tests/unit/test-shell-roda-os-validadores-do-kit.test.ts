@@ -49,7 +49,7 @@ describe("test:shell", () => {
     // Controle positivo: o script tinha 62 elos em 03/11/2026.
     expect(todos.length).toBeGreaterThan(50);
 
-    const ci = readFileSync(join(process.cwd(), ".github/workflows/ci.yml"), "utf8");
+    const ci = readFileSync(join(process.cwd(), "tests/fixtures/upstream-workflows/v1.113.0/ci.yml"), "utf8");
     const passo = ci.match(
       /- name: Kit self-host \(bash\)\n\s+if: (.*)\n\s+env:\n\s+KIT_PESADO: (\S+)\n\s+run: (.*)\n/,
     );

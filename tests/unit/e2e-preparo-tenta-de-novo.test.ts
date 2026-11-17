@@ -19,7 +19,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { binariosDoSistema, BINARIOS_DO_SISTEMA } from "../helpers/path-hermetico-do-preparo";
 
-const E2E = path.resolve(__dirname, "../../.github/workflows/e2e.yml");
+const E2E = path.resolve(__dirname, "../../tests/fixtures/upstream-workflows/v1.113.0/e2e.yml");
 
 function scriptDoPasso(nome: string): string {
   const linhas = readFileSync(E2E, "utf-8").split("\n");

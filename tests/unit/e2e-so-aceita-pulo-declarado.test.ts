@@ -26,7 +26,7 @@ import { describe, expect, it } from "vitest";
 
 // Sem parser YAML nas dependências: recorte do PRIMEIRO `run: |` do job `e2e`.
 function scriptDoAgregador(): string {
-  const linhas = readFileSync(".github/workflows/e2e.yml", "utf-8").split("\n");
+  const linhas = readFileSync("tests/fixtures/upstream-workflows/v1.113.0/e2e.yml", "utf-8").split("\n");
   const job = linhas.findIndex((l) => l === "  e2e:");
   const run = linhas.findIndex((l, i) => i > job && /^\s+run: \|$/.test(l));
   const indent = (linhas[run + 1] ?? "").match(/^\s*/)![0].length;

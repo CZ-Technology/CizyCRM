@@ -25,7 +25,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * Reescrever a regra em TypeScript criaria a segunda verdade sobre o que é um
  * corte, e a segunda envelhece sozinha: alguém ajusta o YAML, o espelho de TS
  * segue verde, e o gate passa a medir uma regra que não roda em lugar nenhum.
- * Aqui o bloco `run:` é EXTRAÍDO do `.github/workflows/release.yml` e
+ * Aqui o bloco `run:` é EXTRAÍDO do `tests/fixtures/upstream-workflows/v1.113.0/release.yml` e
  * executado — o que está sob teste é o arquivo que o CI usa.
  *
  * ═══ Por que repositório SINTÉTICO, e não os commits reais ══════════════════
@@ -86,7 +86,7 @@ const RESPOSTA_DE_GENTE = linhaDaApi(
 
 /** O bloco `run:` do passo que decide se este push foi um corte. */
 function bashDaGuarda(): string {
-  const yml = readFileSync(join(RAIZ, ".github/workflows/release.yml"), "utf8");
+  const yml = readFileSync(join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/release.yml"), "utf8");
   const inicio = yml.indexOf("Este push foi um corte de release?");
   expect(inicio, "o passo da guarda sumiu do release.yml").toBeGreaterThan(-1);
   const run = yml.indexOf("run: |", inicio);

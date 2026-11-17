@@ -30,7 +30,7 @@ describe("pr-mexe-na-imagem", () => {
     ["public/logo.png"],
     ["lib/agent-engine/playbooks/platform.md"],
     ["supabase/baseline.sql"],
-    [".github/workflows/publish-image.yml"],
+    ["tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"],
     [".github/algum/script.ts"],
   ])("%s → constrói", (caminho) => {
     expect(responde(["docs/leia.md", caminho])).toBe("sim");
@@ -47,7 +47,7 @@ describe("pr-mexe-na-imagem", () => {
         "tests/unit/x.test.ts",
         "tests/e2e/y.spec.ts",
         ".changes/fragmento.md",
-        ".github/workflows/ci.yml",
+        "tests/fixtures/upstream-workflows/v1.113.0/ci.yml",
         "CLAUDE.md",
         "playwright.config.ts",
       ]),

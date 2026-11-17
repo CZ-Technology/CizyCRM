@@ -53,7 +53,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-const DIR = join(process.cwd(), ".github/workflows");
+const DIR = join(process.cwd(), "tests/fixtures/upstream-workflows/v1.113.0");
 
 /**
  * O gatilho de cada job, e o que se perde quando ele não roda.

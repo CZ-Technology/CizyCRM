@@ -119,15 +119,16 @@ No CI não há `UPSTASH` nenhum, então lá o caminho é o contador em memória 
 
 **Os invariantes não estão no `test:unit`.** `vitest.config.ts` exclui `tests/invariants/**` de propósito: essa suíte precisa de um Postgres real e roda via `vitest.db.config.ts`, orquestrada por `scripts/test-db.sh`. Rodar só `pnpm test:unit` e concluir "está tudo verde" é um falso verde — o isolamento RLS não foi exercitado.
 
-Checks **obrigatórios** na branch protection da `main` (verificado na configuração, não só no papel):
+Os checks abaixo descrevem o upstream histórico. [O CI ativo deste fork](../fork-ci.md) tem
+outro conjunto de jobs; esta lista não comprova a branch protection do fork:
 
 - **`verify`** (`ci.yml`) — typecheck + lint + test:unit.
-- **`invariants`** (`ci.yml`) — **job de fachada**: ele não roda suíte nenhuma; reprova quando a matriz `invariants-majors` não fecha em `success`. Quem roda é a matriz, uma perna por major do Postgres que o produto diz suportar, e cada perna faz duas passadas: `pnpm test:db` (baseline em modo install com `ON_ERROR_STOP=1` e update, mais os invariantes, incluindo o isolamento RLS entre 2 organizações) e `pnpm test:db:update` (atualização de um banco COM dados). Para saber quais majors hoje, pergunte ao arquivo em vez de a esta linha: `awk '/^  invariants-majors:/,/^  [a-z-]+:/' .github/workflows/ci.yml | grep -A6 'matrix:'`.
+- **`invariants`** (`ci.yml`) — **job de fachada**: ele não roda suíte nenhuma; reprova quando a matriz `invariants-majors` não fecha em `success`. Quem roda é a matriz, uma perna por major do Postgres que o produto diz suportar, e cada perna faz duas passadas: `pnpm test:db` (baseline em modo install com `ON_ERROR_STOP=1` e update, mais os invariantes, incluindo o isolamento RLS entre 2 organizações) e `pnpm test:db:update` (atualização de um banco COM dados). Para saber quais majors hoje, pergunte ao arquivo em vez de a esta linha: `awk '/^  invariants-majors:/,/^  [a-z-]+:/' tests/fixtures/upstream-workflows/v1.113.0/ci.yml | grep -A6 'matrix:'`.
 - **`build-and-size`** (`perf.yml`) — `pnpm build` em Node 22.
 - **`e2e`** (`e2e.yml`) — sobe Supabase local, aplica o `baseline.sql` e roda **todas as specs Playwright menos as que `FORA_DO_CI` declara** — **em PR que alcança algo que ele mede**. PR só de documentação, teste de outra suíte, fragmento ou workflow alheio pula as partes (regra em `scripts/pr-alcanca-o-e2e.sh`, na dúvida roda), e ali o `e2e` verde **não prova tela nenhuma**. O número saiu daqui de propósito: ele apodreceu **cinco** vezes (a quinta em 2026-08-24, quando `inbox-quem-manda.spec.ts` entrou), e a condição que o PR #242 pôs para parar de recontar já tinha vencido na quarta. Quem precisa do número roda o comando abaixo — comando não envelhece. Quais ficam de fora, e por quê, é o que a própria variável diz — **não confie nesta linha, leia-a**:
 
   ```bash
-  git show origin/main:.github/workflows/e2e.yml | \
+  cat tests/fixtures/upstream-workflows/v1.113.0/e2e.yml | \
     python3 -c "import sys,re; y=sys.stdin.read(); print(sorted({s for _,c in re.findall(r'(FORA_DO_CI):\s*>-\n((?:[ ]{8,}.*\n)+)',y) for s in re.findall(r'[a-z0-9-]+\.spec\.ts',c)}))"
   ```
 
@@ -136,20 +137,20 @@ Checks **obrigatórios** na branch protection da `main` (verificado na configura
   Por isso ela sai e não volta: a pergunta "a jornada de instalação fresca tem gate?" se responde por **comando**, com o de cima (o que `FORA_DO_CI` declara) e com este, que diz quem o CI **invoca**:
 
   ```bash
-  git show origin/main:.github/workflows/e2e.yml | python3 -c "import sys,re; y=sys.stdin.read(); print('vps-fresh-onboarding no CI:', 'vps-fresh-onboarding.spec.ts' in {s for _,c in re.findall(r'(SPECS_PARTE_\d+):\s*>-\n((?:[ ]{8,}.*\n)+)',y) for s in re.findall(r'[a-z0-9-]+\.spec\.ts',c)})"
+  cat tests/fixtures/upstream-workflows/v1.113.0/e2e.yml | python3 -c "import sys,re; y=sys.stdin.read(); print('vps-fresh-onboarding no CI:', 'vps-fresh-onboarding.spec.ts' in {s for _,c in re.findall(r'(SPECS_PARTE_\d+):\s*>-\n((?:[ ]{8,}.*\n)+)',y) for s in re.findall(r'[a-z0-9-]+\.spec\.ts',c)})"
   ```
 
   As duas saídas se fecham uma contra a outra porque `tests/unit/e2e-cobertura-completa.test.ts` reprova spec que não esteja nem numa `SPECS_PARTE_*` nem na `FORA_DO_CI`: ausência da primeira saída é presença na segunda, e nenhuma spec cai no vão entre as duas.
 
   O que **não** envelhece e é o que importa: `vps-fresh-onboarding` é a **P0** da doutrina de QA Visual porque a instalação fresca é o produto que se vende. Ter gate não dispensa a prova pela tela (DoD 12) — gate prova que não regrediu, não que a experiência ficou boa. E a ressalva do começo do item continua de pé: em PR que pula as partes, o verde não prova tela nenhuma, a da instalação fresca inclusive.
 
-  **Não confie em `grep` no arquivo inteiro.** `grep -oE '[a-z0-9-]+\.spec\.ts' .github/workflows/e2e.yml | sort -u | wc -l` conta quem é CITADO, não quem é INVOCADO: a `FORA_DO_CI` é uma variável YAML como as outras e entra na conta. (Até 2026-08-14 este parágrafo culpava "menções em comentários", e isso é falso — medido, o conjunto de specs citadas fora de variável é **vazio**.) O que roda são as `SPECS_PARTE_*`:
+  **Não confie em `grep` no arquivo inteiro.** `grep -oE '[a-z0-9-]+\.spec\.ts' tests/fixtures/upstream-workflows/v1.113.0/e2e.yml | sort -u | wc -l` conta quem é CITADO, não quem é INVOCADO: a `FORA_DO_CI` é uma variável YAML como as outras e entra na conta. (Até 2026-08-14 este parágrafo culpava "menções em comentários", e isso é falso — medido, o conjunto de specs citadas fora de variável é **vazio**.) O que roda são as `SPECS_PARTE_*`:
 
   ```bash
   ls tests/e2e/*.spec.ts | wc -l                    # quantas existem
   python3 - <<'PY'                                  # quantas o CI invoca
   import re
-  y = open(".github/workflows/e2e.yml", encoding="utf-8").read()
+  y = open("tests/fixtures/upstream-workflows/v1.113.0/e2e.yml", encoding="utf-8").read()
   print(len({s for _, c in re.findall(r'(SPECS_PARTE_\d+):\s*>-\n((?:[ ]{8,}.*\n)+)', y)
                for s in re.findall(r'[a-z0-9-]+\.spec\.ts', c)}))
   PY

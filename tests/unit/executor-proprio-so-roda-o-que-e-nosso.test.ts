@@ -113,10 +113,11 @@ const ESPERADO: Record<string, string> = {
 // último job de 2 espaços visto antes dele.
 function runsOnPorJob(): Map<string, string> {
   const mapa = new Map<string, string>();
-  for (const arquivo of readdirSync(".github/workflows").filter((a) => /\.ya?ml$/.test(a))) {
+  const dir = "tests/fixtures/upstream-workflows/v1.113.0";
+  for (const arquivo of readdirSync(dir).filter((a) => /\.ya?ml$/.test(a))) {
     let job = "";
     let emJobs = false;
-    for (const linha of readFileSync(`.github/workflows/${arquivo}`, "utf-8").split("\n")) {
+    for (const linha of readFileSync(`${dir}/${arquivo}`, "utf-8").split("\n")) {
       if (/^jobs:\s*$/.test(linha)) emJobs = true;
       const j = emJobs && linha.match(/^ {2}([a-zA-Z0-9_-]+):\s*$/);
       if (j) job = j[1]!;
@@ -146,7 +147,7 @@ describe("o roteamento dos workflows", () => {
   });
 
   it("o job na VPS usa um HOME do job e limpa os contêineres dele mesmo em falha", () => {
-    const ci = readFileSync(".github/workflows/ci.yml", "utf-8");
+    const ci = readFileSync("tests/fixtures/upstream-workflows/v1.113.0/ci.yml", "utf-8");
     const job = ci.slice(ci.indexOf("\n  invariants-majors:\n"), ci.indexOf("\n  invariants:\n"));
     expect(job.length, "não achei o job invariants-majors").toBeGreaterThan(100);
     expect(job).toMatch(/if: runner\.environment == 'self-hosted'\n\s+run: \|[\s\S]*?casa="\$RUNNER_TEMP\/home"[\s\S]*?"HOME=\$casa" >> "\$GITHUB_ENV"/);

@@ -16,7 +16,7 @@
  *
  * ═══ Por que ninguém consertou antes: a frase errada no comentário ═══
  *
- * `.github/workflows/e2e.yml` dizia que, com duas organizações, "o `.single()`
+ * `tests/fixtures/upstream-workflows/v1.113.0/e2e.yml` dizia que, com duas organizações, "o `.single()`
  * falha" — isto é, que o modo de falha era barulho, não dano. **Não é.** Medido
  * em 2026-09-04 contra PostgREST v14.10 (a mesma versão do Supabase local do
  * projeto), com três linhas em `organizations`:

@@ -85,7 +85,7 @@ const RESPOSTA_DE_GENTE = linhaDaApi(
 
 /** O bloco `run:` do passo que decide se este push foi um corte. */
 function bashDaGuarda(): string {
-  const yml = readFileSync(join(RAIZ, ".github/workflows/release.yml"), "utf8");
+  const yml = readFileSync(join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/release.yml"), "utf8");
   const inicio = yml.indexOf("Este push foi um corte de release?");
   expect(inicio, "o passo da guarda sumiu do release.yml").toBeGreaterThan(-1);
   const run = yml.indexOf("run: |", inicio);

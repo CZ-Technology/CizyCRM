@@ -4,7 +4,7 @@
  * Mora em `tests/unit/` — e não em `tests/invariants/` como o plano dizia — por
  * medição, não por gosto: `vitest.config.ts` EXCLUI `tests/invariants/**` do
  * `test:unit`, essa pasta só roda via `pnpm test:db` (Docker + Postgres efêmero) e
- * `.github/workflows/ci.yml` roda apenas typecheck + lint + `pnpm test:unit`. Um
+ * `tests/fixtures/upstream-workflows/v1.113.0/ci.yml` roda apenas typecheck + lint + `pnpm test:unit`. Um
  * teste de constante TypeScript lá dentro exigiria um banco para rodar e **nunca
  * reprovaria o CI** — o oposto do que o invariante 2 da doutrina promete.
  */

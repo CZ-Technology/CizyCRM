@@ -218,7 +218,7 @@ describe("o baseline fica no piso de Postgres que dizemos suportar", () => {
     // régua da instalação, não a única major que existe (issue #454). Este teste
     // é a catraca dessa cobertura — sem ele, apagar a matriz deixa o produto
     // medindo uma major só, com o CI verde e ninguém avisando.
-    const ci = readFileSync(path.join(RAIZ, ".github/workflows/ci.yml"), "utf8");
+    const ci = readFileSync(path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/ci.yml"), "utf8");
 
     // 1. As duas majors existem, e a matriz vem do portão que as escolhe.
     //    Desde 18/09/2026 a matriz é dinâmica (`invariants-alcance`): o piso só

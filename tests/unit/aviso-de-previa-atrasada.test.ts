@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-const CI = readFileSync(".github/workflows/ci.yml", "utf8");
+const CI = readFileSync("tests/fixtures/upstream-workflows/v1.113.0/ci.yml", "utf8");
 
 /** O bloco do passo, da linha do `- name:` até o próximo passo do mesmo nível. */
 function passo(nome: string): string {

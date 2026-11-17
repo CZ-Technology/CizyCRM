@@ -35,6 +35,11 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 
 ---
 
+**Escopo deste fork:** as referências abaixo a jobs `verify`, `e2e`, `imagens-ok` e
+publicação descrevem o upstream histórico. O único [workflow ativo do fork](docs/fork-ci.md)
+executa validação em PR e não ativa E2E, publicação de imagens ou release. Verifique os
+resultados reais antes de declarar cobertura ou aprovação de merge.
+
 ## Convenções críticas (NÃO NEGOCIÁVEIS)
 
 ### Multi-tenancy

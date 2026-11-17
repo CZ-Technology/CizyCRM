@@ -80,7 +80,7 @@ const RAIZ = process.cwd();
 
 const COMUM = fs.readFileSync(path.join(RAIZ, "hostgator-setup-kit/_common.sh"), "utf8");
 const COMPOSE = fs.readFileSync(path.join(RAIZ, "docker-compose.prod.yml"), "utf8");
-const PUBLICA = fs.readFileSync(path.join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
+const PUBLICA = fs.readFileSync(path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"), "utf8");
 const ENV_EXEMPLO = fs.readFileSync(path.join(RAIZ, ".env.hostgator.example"), "utf8");
 
 
@@ -294,7 +294,7 @@ describe("o kit aponta para o que o CI realmente publica", () => {
 
   it("o registry do kit é o mesmo do workflow de publicação", () => {
     const m = PUBLICA.match(/^\s*REGISTRY:\s*(\S+)$/m);
-    expect(m, "não achei `REGISTRY:` em .github/workflows/publish-image.yml").not.toBeNull();
+    expect(m, "não achei `REGISTRY:` em tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml").not.toBeNull();
     expect(imgNs().split("/")[0]).toBe(m![1]);
   });
 

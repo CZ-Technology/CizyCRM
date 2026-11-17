@@ -156,8 +156,9 @@ local inteira, na ordem, com o que precisa instalado: `references/receita-e2e-lo
 Docker ou sem tempo: mande o que conseguiu provar (unit + o que testou na mão, passo a passo) e
 diga que a prova de tela ficou com o mantenedor — é o combinado público, não uma falha.
 
-Spec nova entra em `SPECS_PARTE_N` do `.github/workflows/e2e.yml` (ou em `FORA_DO_CI` com o
-motivo escrito); o teste `tests/unit/e2e-cobertura-completa.test.ts` reprova spec órfã.
+No upstream, a spec nova entrava em `SPECS_PARTE_N` de `tests/fixtures/upstream-workflows/v1.113.0/e2e.yml`.
+Essa fixture é histórica e não ativa E2E no fork; uma spec nova exige revisão da lacuna de CI,
+sem alterar a cópia histórica para fingir execução.
 
 ### Se o caminho passa por um agente de IA, meça o par
 

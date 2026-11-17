@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import { CAMINHO_DO_TICK, urlDoTickDoRelogio } from "@/lib/relogio/tarefas";
 
 describe("workflow relogio (Hobby)", () => {
-  const yml = readFileSync(join(process.cwd(), ".github/workflows/relogio.yml"), "utf8");
+  const yml = readFileSync(join(process.cwd(), "tests/fixtures/upstream-workflows/v1.113.0/relogio.yml"), "utf8");
 
   it("bate o tick HTTP e não o cron diário da Vercel", () => {
     expect(yml).toContain(CAMINHO_DO_TICK);

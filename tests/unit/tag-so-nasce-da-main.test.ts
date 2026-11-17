@@ -10,8 +10,8 @@ import { describe, expect, it } from "vitest";
  * propriedades que impedem que ela vire uma porta aberta.
  */
 const RAIZ = process.cwd();
-const publish = fs.readFileSync(path.join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
-const release = fs.readFileSync(path.join(RAIZ, ".github/workflows/release.yml"), "utf8");
+const publish = fs.readFileSync(path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"), "utf8");
+const release = fs.readFileSync(path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/release.yml"), "utf8");
 
 /** As linhas de um job, até o próximo job na mesma indentação. */
 function job(yml: string, nome: string): string {
@@ -108,5 +108,37 @@ describe("a tag nasce no CI, e nunca do GITHUB_TOKEN", () => {
   it("a tag só é criada em push na main, nunca num dispatch de branch qualquer", () => {
     expect(job(release, "cortar-tag")).toMatch(/if:\s*github\.event_name == 'push'/);
     expect(release).toMatch(/push:\s*\n\s*branches:\s*\[main\]/);
+  });
+});
+
+describe("fork sem o App de release não reprova a cada merge (PR #4462)", () => {
+  const t = job(release, "cortar-tag");
+  const passoDoToken = /- uses: actions\/create-github-app-token@v3\n((?: {8}.*\n)+)/.exec(t)?.[1] ?? "";
+
+  it("a condição sai do `env` do job e exige os DOIS segredos", () => {
+    // `if:` de passo não lê `secrets`; o `env` do job lê.
+    expect(t).toMatch(
+      /^ {4}env:\n {6}RELEASE_APP_CADASTRADO: \$\{\{ secrets\.RELEASE_APP_ID != '' && secrets\.RELEASE_APP_PRIVATE_KEY != '' \}\}$/m,
+    );
+    expect(passoDoToken, "o passo do token sumiu do cortar-tag").not.toBe("");
+    expect(passoDoToken).toMatch(/if: env\.RELEASE_APP_CADASTRADO == 'true'/);
+  });
+
+  it("com o App cadastrado nada muda: o token nasce ANTES da guarda e o slug segue na Prova 1", () => {
+    // Mover o token para depois da guarda (a forma original do #4462) apagava a
+    // Prova 1 também no upstream: o slug só existe depois de pedir o token.
+    expect(t.indexOf("actions/create-github-app-token")).toBeGreaterThan(-1);
+    expect(t.indexOf("actions/create-github-app-token")).toBeLessThan(t.indexOf("name: Este push foi um corte de release?"));
+    expect(t).toContain("APP_SLUG: ${{ steps.token.outputs.app-slug }}");
+  });
+
+  it("o checkout não recebe token vazio quando o passo do App é pulado", () => {
+    expect(t).toContain("token: ${{ steps.token.outputs.token || github.token }}");
+  });
+
+  it("corte sem App falha alto, antes de empurrar a tag", () => {
+    const falha = t.indexOf("env.RELEASE_APP_CADASTRADO != 'true'");
+    expect(falha, "o passo que recusa corte sem App sumiu").toBeGreaterThan(-1);
+    expect(falha).toBeLessThan(t.indexOf("name: Criar e empurrar a tag"));
   });
 });

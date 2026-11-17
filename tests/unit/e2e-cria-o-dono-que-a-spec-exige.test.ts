@@ -43,7 +43,7 @@ import * as path from "node:path";
 const RAIZ = path.resolve(__dirname, "../..");
 const ler = (rel: string): string => fs.readFileSync(path.join(RAIZ, rel), "utf8");
 
-const workflow = ler(".github/workflows/e2e.yml");
+const workflow = ler("tests/fixtures/upstream-workflows/v1.113.0/e2e.yml");
 const gerador = ler("scripts/gerar-env-e2e.sh");
 const spec = ler("tests/e2e/vps-fresh-onboarding.spec.ts");
 

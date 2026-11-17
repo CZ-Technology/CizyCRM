@@ -40,6 +40,14 @@ describe("pr-mexe-na-imagem", () => {
     expect(responde([])).toBe("sim");
   });
 
+  it.each([
+    "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml",
+    "tests/fixtures/upstream-workflows/v1.113.0/ci.yml",
+    ".github/workflows/sync-upstream.yml",
+  ])("%s não alcança o contexto das imagens", (caminho) => {
+    expect(responde([caminho])).toBe("nao");
+  });
+
   it("PR só de documentação, teste, fragmento e workflow alheio pula", () => {
     expect(
       responde([
@@ -47,7 +55,7 @@ describe("pr-mexe-na-imagem", () => {
         "tests/unit/x.test.ts",
         "tests/e2e/y.spec.ts",
         ".changes/fragmento.md",
-        ".github/workflows/ci.yml",
+        "tests/fixtures/upstream-workflows/v1.113.0/ci.yml",
         "CLAUDE.md",
         "playwright.config.ts",
       ]),
@@ -109,6 +117,13 @@ describe("pr-mexe-na-imagem", () => {
     // dublê (somarCiclo, cobranças geradas de saída) batem com o Asaas de verdade.
     "scripts/smoke-asaas.ts",
   ]);
+
+  // O backup.sh grava em $PROJECT_DIR/backups por padrão (dump do banco, sessão
+  // do WhatsApp, anexos), ao lado do código que o `COPY . .` leva para a imagem.
+  it("a pasta de backups da instalação fica fora do contexto de build", () => {
+    expect(readFileSync("hostgator-setup-kit/backup.sh", "utf-8")).toContain("$PROJECT_DIR/backups");
+    expect(ignorados).toContain("backups");
+  });
 
   it("nenhum arquivo que entra na imagem importa de pasta que o .dockerignore exclui", () => {
     const pastasFora = new Set(ignorados.filter((e) => !e.includes("*") && !e.includes(".")));

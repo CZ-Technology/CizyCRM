@@ -15,7 +15,7 @@ const ALVOS = [
 ] as const;
 
 function politica(arquivo: string, job: string) {
-  const yaml = readFileSync(`.github/workflows/${arquivo}`, "utf8");
+  const yaml = readFileSync(`tests/fixtures/upstream-workflows/v1.113.0/${arquivo}`, "utf8");
   const inicio = yaml.indexOf(`\n  ${job}:\n`);
   if (inicio < 0) throw new Error(`Job ausente: ${job}`);
   const resto = yaml.slice(inicio + 1);
@@ -145,7 +145,7 @@ describe.each(ALVOS)("%s::%s — revisão superada não ocupa o job atual", (arq
 });
 
 it("verify executa sua asserção real: cancelado/skipped/failure não são prova", () => {
-  const linhas = readFileSync(".github/workflows/ci.yml", "utf8").split("\n");
+  const linhas = readFileSync("tests/fixtures/upstream-workflows/v1.113.0/ci.yml", "utf8").split("\n");
   const inicio = linhas.indexOf("  verify:");
   const run = linhas.findIndex((linha, i) => i > inicio && /^ +run: \|$/.test(linha));
   const primeira = linhas[run + 1];

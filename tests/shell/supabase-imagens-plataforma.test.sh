@@ -129,7 +129,7 @@ echo '✓ instalador recusa em árvore limpa sem criar estado'
 # A ref do Supabase é conferida quando ela MUDA (a pinagem exata está em
 # single-server-installer.test.sh), nunca na promoção de `stable`: ali uma falha
 # de rede ou uma imagem upstream sem arm64 seguraria a release de todos.
-workflow="$(<"$ROOT/.github/workflows/publish-image.yml")"
+workflow="$(<"$ROOT/tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml")"
 case "$workflow" in
   *'preflight_supabase_da_ref'*) echo '✗ a release depende da sonda de rede do Supabase'; exit 1 ;;
   *) echo '✓ a promoção de stable não depende da sonda do Supabase' ;;

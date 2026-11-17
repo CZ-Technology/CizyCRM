@@ -93,7 +93,9 @@ worker:
 
 ### 2. Publicação é ato do CI, e carrega procedência
 
-Imagem nossa só existe se saiu de `.github/workflows/publish-image.yml`. Ela carrega os labels
+No upstream, a publicação seguia `tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml`.
+Esse arquivo é apenas [referência histórica no fork](../fork-ci.md); sua presença não publica
+nenhuma imagem. Uma imagem publicada deve carregar os labels
 OCI — no mínimo `source`, `revision`, `version`, `licenses` — e é construída para `linux/amd64` e `linux/arm64`.
 
 - **Por quê:** duas razões distintas. **(a) Arquitetura:** um `docker build` local pode produzir

@@ -10,11 +10,13 @@ falta — e que nada do que ela leia seja cobrança por algo que ninguém contou
 
 ## Acolhida (passe 1) — em minutos, sem uma linha de avaliação
 
-**Ela sai sozinha em PR de fork**, por `.github/workflows/acolhida.yml`, em minutos e sem depender
+**No upstream histórico, ela saía sozinha em PR de fork**, pelo workflow preservado em
+`tests/fixtures/upstream-workflows/v1.113.0/acolhida.yml`, em minutos e sem depender
 de alguém estar triando — que era o gargalo real: a taxa de recusa aqui é zero, o que custava era o
 tempo até alguém olhar. O passe 1 humano só escreve isto quando o robô não escreveu (PR interno, ou
 o workflow desligado); e o robô desiste sozinho se já houver qualquer âncora `triagem-de-pr:v1:` no
-PR — inclusive a sua.
+PR — inclusive a sua. Neste fork, a acolhida não está ativa; veja
+[`docs/fork-ci.md`](../../docs/fork-ci.md).
 
 Duas frases do molde abaixo o robô **não pode** dizer, e é por isso que o texto dele não é cópia
 literal: "acabei de liberar" (ele não libera — aprovar run de fork é executar código de fora nos

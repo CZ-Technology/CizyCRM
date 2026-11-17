@@ -312,7 +312,7 @@ describe("packaging — o artefato que o cliente instala", () => {
   });
 
   it("o workflow publica as quatro imagens e injeta APP_VERSION", () => {
-    const wf = fs.readFileSync(path.join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
+    const wf = fs.readFileSync(path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"), "utf8");
     for (const imagem of [
       "deskcommcrm",
       "deskcomm-worker",
@@ -343,7 +343,7 @@ describe("packaging — o artefato que o cliente instala", () => {
     // Este teste guarda o COMPORTAMENTO (o que dispara um build que publica),
     // não a ausência de uma string: qualquer gatilho novo que re-publique sobre
     // uma tag existente reprova aqui, não só o `release`.
-    const wf = fs.readFileSync(path.join(RAIZ, ".github/workflows/publish-image.yml"), "utf8");
+    const wf = fs.readFileSync(path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"), "utf8");
     const gatilhos = wf.split(/^jobs:/m)[0] ?? "";
     const semComentarios = gatilhos
       .split("\n")

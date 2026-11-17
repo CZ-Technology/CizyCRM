@@ -21,7 +21,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 /** O corpo do passo, recortado do workflow: o teste mede o que o CI roda. */
 const PASSO = (() => {
-  const linhas = readFileSync(".github/workflows/ci.yml", "utf-8").split("\n");
+  const linhas = readFileSync("tests/fixtures/upstream-workflows/v1.113.0/ci.yml", "utf-8").split("\n");
   const i = linhas.findIndex((l) => l.includes("A árvore da main tem NNNN ou timestamp repetido?"));
   if (i < 0) throw new Error("o passo saiu do ci.yml");
   const run = linhas.findIndex((l, k) => k > i && /^\s+run: \|$/.test(l));

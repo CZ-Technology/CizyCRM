@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { binariosDoSistema } from "../helpers/path-hermetico-do-preparo";
 
 const RAIZ = path.resolve(__dirname, "../..");
-const WORKFLOW = path.join(RAIZ, ".github/workflows/e2e.yml");
+const WORKFLOW = path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/e2e.yml");
 const BROWSER = "Instalar o browser";
 const FFMPEG = "Instalar o ffmpeg e sondar os encoders";
 const AZURE = "http://azure.archive.ubuntu.com/ubuntu/";

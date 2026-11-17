@@ -43,7 +43,9 @@ describe("pr-mexe-no-piso-do-postgres", () => {
         "tests/e2e/leads.spec.ts",
         "docs/runbooks/deploy.md",
         ".changes/fragmento.md",
-        ".github/workflows/e2e.yml",
+        "tests/fixtures/upstream-workflows/v1.113.0/ci.yml",
+        "tests/fixtures/upstream-workflows/v1.113.0/e2e.yml",
+        ".github/workflows/sync-upstream.yml",
         "package.json",
       ]),
     ).toBe("nao");

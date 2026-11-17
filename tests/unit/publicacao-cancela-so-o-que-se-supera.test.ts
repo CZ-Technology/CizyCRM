@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-const YML = readFileSync(".github/workflows/publish-image.yml", "utf-8");
+const YML = readFileSync("tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml", "utf-8");
 
 // O `concurrency:` mora no job (ver o cabeçalho do ci.yml). Os três jobs de
 // build usam a mesma condição — concorrencia-so-nos-jobs-pesados.test.ts cobra

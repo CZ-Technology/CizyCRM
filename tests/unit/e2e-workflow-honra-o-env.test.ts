@@ -10,7 +10,7 @@
  * passando verde.
  *
  * O que saiu incompleto foi a outra ponta: o refactor mudou o contrato do
- * ambiente e não mexeu em `.github/workflows/e2e.yml`. O job seguiu rodando
+ * ambiente e não mexeu em `tests/fixtures/upstream-workflows/v1.113.0/e2e.yml`. O job seguiu rodando
  * `pnpm build` e chamando a suíte sem gerar nada, e o e2e do PR morreu em
  * `Falta o .env.e2e` — 3m48s de CI para descobrir uma dependência que ninguém
  * declarou em lugar nenhum.
@@ -44,7 +44,7 @@ import * as path from "node:path";
 
 const RAIZ = path.resolve(__dirname, "../..");
 
-const workflow = fs.readFileSync(path.join(RAIZ, ".github/workflows/e2e.yml"), "utf8");
+const workflow = fs.readFileSync(path.join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/e2e.yml"), "utf8");
 const config = fs.readFileSync(path.join(RAIZ, "playwright.config.ts"), "utf8");
 const packageJson = JSON.parse(fs.readFileSync(path.join(RAIZ, "package.json"), "utf8")) as {
   scripts: Record<string, string>;

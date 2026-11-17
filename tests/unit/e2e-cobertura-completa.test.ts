@@ -3,7 +3,7 @@
  *
  * ## O defeito, medido em 2026-08-08
  *
- * `.github/workflows/e2e.yml` tinha as listas de spec digitadas dentro dos dois
+ * `tests/fixtures/upstream-workflows/v1.113.0/e2e.yml` tinha as listas de spec digitadas dentro dos dois
  * `run:` e, mais abaixo, um passo cuja função declarada era dizer o que o job NÃO
  * cobre — escrito à mão, em prosa. As duas fontes divergiram em silêncio:
  *
@@ -45,7 +45,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const RAIZ = process.cwd();
-const WORKFLOW = path.join(RAIZ, ".github", "workflows", "e2e.yml");
+// Contrato histórico explícito: o fork não ativa o workflow de E2E upstream.
+const WORKFLOW = path.join(RAIZ, "tests", "fixtures", "upstream-workflows", "v1.113.0", "e2e.yml");
 const DIR_SPECS = path.join(RAIZ, "tests", "e2e");
 
 /**

@@ -34,7 +34,7 @@ done
 # `npx supabase` sem versão baixa o `latest`, e a 3.0.0 recusou o config.toml
 # deste repositório: o instalador local parava no `supabase start`. O pino tem
 # de ser o MESMO do e2e, que é quem prova esse stack no CI.
-VERSAO_CI="$(awk '/supabase\/setup-cli@/{a=1} a && /version:/{print $2; exit}' "$ROOT_DIR/.github/workflows/e2e.yml")"
+VERSAO_CI="$(awk '/supabase\/setup-cli@/{a=1} a && /version:/{print $2; exit}' "$ROOT_DIR/tests/fixtures/upstream-workflows/v1.113.0/e2e.yml")"
 check "local-supabase.sh fixa o Supabase CLI na versão do e2e ($VERSAO_CI)" bash -c '
   [[ "$2" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
   grep -qx "SUPABASE_CLI_VERSION=$2" "$1" &&

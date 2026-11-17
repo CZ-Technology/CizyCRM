@@ -33,7 +33,7 @@ import { describe, expect, it } from "vitest";
  * em silêncio.
  */
 const RAIZ = process.cwd();
-const release = readFileSync(join(RAIZ, ".github/workflows/release.yml"), "utf8");
+const release = readFileSync(join(RAIZ, "tests/fixtures/upstream-workflows/v1.113.0/release.yml"), "utf8");
 const doutrina = readFileSync(join(RAIZ, "docs/doctrine/versionamento.md"), "utf8");
 const changelog = readFileSync(join(RAIZ, "CHANGELOG.md"), "utf8");
 

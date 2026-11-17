@@ -91,10 +91,11 @@ Ao finalizar um epic:
    outros: a dívida decai sozinha se ninguém a alimentar. Achados medidos, com o comando de cada
    um, em [`docs/audits/2026-08-14-afirmacoes-de-estado.md`](docs/audits/2026-08-14-afirmacoes-de-estado.md).
 
-6. CI deve passar antes de merge. Obrigatórios: `verify`, `invariants` (isolamento RLS),
+6. CI deve passar antes de merge. No fork, consulte [o CI ativo](docs/fork-ci.md); a lista
+   abaixo descreve os checks históricos do upstream: `verify`, `invariants` (isolamento RLS),
    `build-and-size`, `e2e` e `imagens-ok`.
 
-   O `imagens-ok` (em `.github/workflows/publish-image.yml`) constrói as três imagens que o
+   O `imagens-ok` (em `tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml`) constrói as três imagens que o
    self-hoster instala, roda em PR e **bloqueia** desde 2026-08-13.
 
    Verde no `e2e` **não** é "jornada provada": ele mesmo imprime, no resumo, quais specs não
@@ -102,7 +103,7 @@ Ao finalizar um epic:
    fora era `vps-fresh-onboarding`, a instalação do zero, e desde o PR #983 essa roda no CI:
 
    ```bash
-   git show origin/main:.github/workflows/e2e.yml | grep -A4 'FORA_DO_CI:'
+   cat tests/fixtures/upstream-workflows/v1.113.0/e2e.yml | grep -A4 'FORA_DO_CI:'
    ```
 
    E mesmo a jornada que TEM gate continua devendo a prova pela tela quando você mexe nela

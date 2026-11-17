@@ -21,6 +21,10 @@ import {
   TAMANHO_MAXIMO_DO_MODELO,
   TAMANHO_MAXIMO_DO_ROTULO,
 } from "@/lib/leads/atalhos-do-card";
+import {
+  MAX_CARACTERES_DA_CATEGORIA_DE_PERDA,
+  MAX_CATEGORIAS_DE_PERDA,
+} from "@/lib/schemas/leads";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
 import { conversationTagSchema } from "./messaging";
@@ -446,6 +450,34 @@ export const pipelineConfigPatchSchema = z.object({
     .max(50)
     .optional(),
   /**
+   * AS CATEGORIAS DE PERDA DESTE FUNIL (#4437).
+   *
+   * A lista de fábrica (`CATEGORIAS_DE_PERDA`) é o piso de quem nunca declarou
+   * nada — mas ela é do PRODUTO, não do negócio: uma clínica não perde por
+   * "Concorrência" e uma loja precisa de "Risco". Aqui o funil declara as suas,
+   * na ordem em que quer vê-las na tela.
+   *
+   * DOUTRINA DA CHAVE (a mesma de `ocultar_encerrados_dias`):
+   *   - AUSENTE = o funil nunca declarou → vale a lista de fábrica, MAIS as
+   *     categorias que os motivos já usam (é assim que o "Risco" gravado à mão
+   *     no "Possível fraude" continua existindo sem migração de dado);
+   *   - PRESENTE, inclusive `[]` = decisão da organização → vale exatamente o
+   *     que está aqui. `[]` é legítimo: esconder todas é uma escolha, e não
+   *     pode ressuscitar a lista de fábrica.
+   *
+   * Esconder uma categoria é TIRÁ-LA DAQUI, e só isso: o `categoria` gravado em
+   * `lost_reasons` não é tocado, então o motivo que já usava continua agrupado
+   * no relatório e continua mostrando a categoria dele no menu. O que muda é
+   * que ela deixa de ser oferecida para os OUTROS motivos.
+   *
+   * Renomear é trocar o texto na lista; a tela reescreve o `categoria` dos
+   * motivos que usavam o nome antigo, senão o vínculo viraria um rótulo órfão.
+   */
+  lost_reason_categories: z
+    .array(z.string().min(1).max(MAX_CARACTERES_DA_CATEGORIA_DE_PERDA))
+    .max(MAX_CATEGORIAS_DE_PERDA)
+    .optional(),
+  /**
    * O MOTIVO DE GANHO por funil (issue #1536) — espelho de `lost_reasons`.
    * Sem lista cadastrada o motivo é texto livre; com lista, só o que está nela
    * passa (`recusaDeMotivoDoGanho`, o equivalente do ganho à CHECK que o banco
@@ -828,6 +860,22 @@ export const crmSettingsSchema = z
      * de um dígito a mais.
      */
     pos_venda_dias: z.number().int().min(0).max(365).catch(0),
+    /**
+     * `duplicados_por_nome` (#4138): a tela Contatos › Duplicados também sugere
+     * pares pelo NOME, na seção "Parecidos — confira".
+     *
+     * ⚠️ NASCE DESLIGADA em toda organização — e a régua é a mesma das vizinhas:
+     * só o booleano `true` liga. Desligada, a rota não chama
+     * `encontrarParecidosPorNome` nem lê as dispensas, e a seção nem aparece.
+     *
+     * O motivo de existir é o inverso do que a torna perigosa: em base de pessoa
+     * física o nome repete e a sugestão vira ruído; em base de empresas
+     * prospectadas é o único caminho medido para achar a mesma empresa com dois
+     * telefones (spec 31, B1). Quem sabe qual dos dois mundos é o seu é quem
+     * opera — não o produto. Nada aqui funde sozinho: a sugestão só abre a
+     * conferência, e juntar continua sendo um clique de gestor.
+     */
+    duplicados_por_nome: z.boolean().catch(false),
   })
   .catch({
     cliente_pela_agenda: false,
@@ -838,6 +886,7 @@ export const crmSettingsSchema = z
     avisar_transferencia_no_whatsapp: true,
     cliente_pela_venda: false,
     pos_venda_dias: 0,
+    duplicados_por_nome: false,
   });
 
 /**
@@ -965,6 +1014,27 @@ export function regrasDeCliente(settings: unknown): RegrasDeCliente {
 /** A regra "cliente pela venda" está ligada nesta organização? Nunca lança. */
 export function clientePelaVendaLigado(settings: unknown): boolean {
   return regrasDeCliente(settings).pelaVenda;
+}
+
+/**
+ * A SUGESTÃO DE DUPLICADO PELO NOME está ligada nesta organização? **Desligada
+ * por padrão**, e nunca lança (#4138).
+ *
+ * A régua é a mesma das outras chaves de `settings.crm`: só o booleano `true`
+ * liga. Ausente — toda organização que já existia antes desta chave —, `false`,
+ * a string `"true"` ou qualquer lixo é DESLIGADO, e a tela de Duplicados volta a
+ * mostrar só os motivos fortes (telefone, e-mail, CPF, telefone em conflito).
+ *
+ * Lido pela rota da varredura (`app/api/v1/contacts/duplicates/route.ts`), que é
+ * quem decide se chama `encontrarParecidosPorNome` e se lê as dispensas: a tela
+ * não filtra nada por conta própria.
+ */
+export function duplicadosPorNomeLigado(settings: unknown): boolean {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).duplicados_por_nome === true;
 }
 
 /**

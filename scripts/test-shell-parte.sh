@@ -16,14 +16,15 @@ set -euo pipefail
 
 # Falha fechada em três casos: modo desconhecido; arquivo que não está no
 # script (renomeado: o `so` rodaria nada e o `menos` rodaria tudo, em silêncio);
-# e elo que não é `bash <arquivo>` — um `cd x && bash y` cortado ao meio
-# rodaria o `bash y` no diretório errado.
+# e elo que não é `bash <arquivo>` ou `node --test tests/shell/<arquivo>.mjs` —
+# um `cd x && bash y` cortado ao meio rodaria o `bash y` no diretório errado.
 pedaco=$(node -e '
 const [modo, arq] = process.argv.slice(1);
 if (modo !== "so" && modo !== "menos") { console.error(`modo inválido: ${modo} (use so ou menos)`); process.exit(2); }
 const cmds = require("./package.json").scripts["test:shell"].split(" && ");
-const ruins = cmds.filter((c) => !/^bash [\w./-]+$/.test(c));
-if (ruins.length) { console.error("test:shell tem elo que não é `bash <arquivo>`: " + ruins.join(" | ")); process.exit(2); }
+const eloSeguro = /^(?:bash [\w./-]+|node --test tests\/shell\/[\w.-]+\.mjs)$/;
+const ruins = cmds.filter((c) => !eloSeguro.test(c));
+if (ruins.length) { console.error("test:shell tem elo fora dos formatos bash/Node permitidos: " + ruins.join(" | ")); process.exit(2); }
 const alvo = `bash ${arq}`;
 if (cmds.filter((c) => c === alvo).length !== 1) { console.error(`${arq} não aparece exatamente uma vez no test:shell`); process.exit(2); }
 console.log(cmds.filter((c) => (c === alvo) === (modo === "so")).join(" && "));

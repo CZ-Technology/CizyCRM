@@ -2,6 +2,10 @@
 
 Este arquivo é o procedimento inteiro. O comando `/triagem-de-pr` é só a porta.
 
+Esta triagem documenta o upstream histórico. Neste fork, apenas
+[`sync-upstream.yml`](../.github/workflows/sync-upstream.yml) está ativo; consulte
+[`docs/fork-ci.md`](../docs/fork-ci.md) antes de inferir que acolhida, E2E ou release rodam aqui.
+
 **Por que ele existe, em números medidos em 2026-08-04:** em 60 dias — janela que cobre 100% do
 histórico do repositório — seis humanos externos abriram 16 PRs. **Quinze mergeados, zero fechados.**
 A taxa de rejeição é zero. O gargalo nunca foi qualidade: os 7 PRs de um mesmo contribuidor
@@ -28,7 +32,8 @@ MAIN=$(git rev-parse origin/main)
 Daqui em diante, **todo** config de gate se lê por `git show origin/main:<path>`. Nunca do disco.
 
 Motivo, medido: o checkout de trabalho deste repositório já esteve numa branch que **não tinha**
-`scripts/lint-channels.ts`, não tinha `.github/workflows/e2e.yml` e ainda usava Node 20 no
+`scripts/lint-channels.ts`, não tinha o workflow upstream `e2e.yml` (preservado como
+`tests/fixtures/upstream-workflows/v1.113.0/e2e.yml`) e ainda usava Node 20 no
 `perf.yml`. Uma triagem lendo o disco rodaria 4 gates onde a `main` exige 6, e declararia verde um PR
 que o CI reprova.
 
@@ -121,7 +126,8 @@ Nesta ordem:
 A acolhida **não contém juízo técnico**. É isso, e só isso, que a torna segura de ser automática:
 ela não pode estar errada sobre o mérito porque não fala do mérito. Ela diz três coisas — o CI está
 sendo liberado, onde olhar o que trava o merge, e quando vem o veredito. O texto vive em
-`references/resposta-ao-contribuidor.md`, espelhado em `.github/workflows/acolhida.yml`.
+`references/resposta-ao-contribuidor.md`, espelhado no upstream histórico em
+`tests/fixtures/upstream-workflows/v1.113.0/acolhida.yml`; este fork não ativa essa acolhida.
 
 Todo comentário desta triagem abre com a âncora invisível `<!-- triagem-de-pr:v1:pass=N -->`. Leia as
 âncoras existentes antes de escrever: **acolhida nunca é postada duas vezes.**
@@ -276,7 +282,8 @@ e mantê-los no resultado esconde as colisões que importam atrás de ruído.
 
 O que a matriz devolve costuma ser **um punhado de pares e um arquivo-hub**. Medido na mesma data:
 dos 21 PRs, 15 eram totalmente independentes; as 7 colisões se concentravam em `lib/i18n/dicionario.ts`
-(4 PRs) e um par em `.github/workflows/release.yml`.
+(4 PRs) e um par no workflow upstream `release.yml`, preservado em
+`tests/fixtures/upstream-workflows/v1.113.0/release.yml` (não ativo neste fork).
 
 A consequência é a ordem de trabalho, e ela é o oposto do intuitivo:
 

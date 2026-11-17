@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 function ler(arquivo: string): string {
-  return readFileSync(`.github/workflows/${arquivo}`, "utf-8");
+  return readFileSync(`tests/fixtures/upstream-workflows/v1.113.0/${arquivo}`, "utf-8");
 }
 
 // Sem parser YAML nas dependências (workflows-tem-permissions.test.ts):

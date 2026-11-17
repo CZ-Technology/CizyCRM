@@ -2,7 +2,8 @@
 
 > Contrato portável para **qualquer** agente de código (Codex, Cursor, OpenCode, Antigravity, Copilot).
 > Este arquivo é o núcleo. A **doutrina completa e não-negociável vive em [`CLAUDE.md`](CLAUDE.md)** —
-> leia-o antes de tocar em código. O mapa de toda a documentação está em [`docs/index.md`](docs/index.md).
+> leia-o antes de tocar em código. Seções longas dele (testes, migrations, auditoria, WAHA, QA visual)
+> têm o texto integral em [`docs/doctrine/`](docs/doctrine/); lá vale o integral sobre o resumo. O mapa de toda a documentação está em [`docs/index.md`](docs/index.md).
 > Precedência quando dois documentos discordam: `CLAUDE.md` > `docs/specs/` > `docs/prd/` >
 > `HANDOFF-*.md` > `README.md`.
 
@@ -157,14 +158,18 @@ Se a mudança toca schema/RLS/tabela tenant-aware, rode `pnpm test:db`. Se toca 
 usuário, rode `pnpm test:e2e` com evidência visual. Se toca `Dockerfile*`, `docker-compose*` ou
 `hostgator-setup-kit/`, rode `pnpm test:shell` — é o único gate que exercita o kit.
 
-**O que o CI cobre.** `.github/workflows/ci.yml`: `verify` = os passos do job, na ordem —
+**CI deste fork:** veja [`docs/fork-ci.md`](docs/fork-ci.md). O bloco seguinte descreve o
+contrato histórico do upstream, preservado como fixture; os checks de `e2e`, imagem e release
+citados nele não são executados neste fork.
+
+**Referência histórica do upstream.** `tests/fixtures/upstream-workflows/v1.113.0/ci.yml`: `verify` = os passos do job, na ordem —
 typecheck, lint, `lint:channels`, `test:unit` e `test:shell` hoje, e `pnpm lint` sozinho **não**
 cobre os dois últimos (liste em vez de acreditar nesta linha:
-`awk '/^  verify:/,/^  invariants-majors:/' .github/workflows/ci.yml | grep -A1 'name:'`);
+`awk '/^  verify:/,/^  invariants-majors:/' tests/fixtures/upstream-workflows/v1.113.0/ci.yml | grep -A1 'name:'`);
 `invariants` = fachada sobre a matriz `invariants-majors`, que roda `pnpm test:db` (isolamento
 RLS + invariantes de governança) e `pnpm test:db:update` (atualizar banco COM dados) uma vez por
-major de Postgres suportado. `.github/workflows/perf.yml`: `build-and-size` = `pnpm build`.
-`.github/workflows/e2e.yml` roda as specs Playwright contra um Supabase local de verdade com
+major de Postgres suportado. `tests/fixtures/upstream-workflows/v1.113.0/perf.yml`: `build-and-size` = `pnpm build`.
+`tests/fixtures/upstream-workflows/v1.113.0/e2e.yml` roda as specs Playwright contra um Supabase local de verdade com
 o `baseline.sql` aplicado — o mesmo banco que o self-hoster tem. **É check obrigatório** — a
 data de ativação não é auditável pelo repositório, e a lista viva está logo abaixo, com o
 comando ao lado. **Não há número aqui de propósito**: esta linha já afirmou uma contagem exata
@@ -179,12 +184,12 @@ gh api repos/melgarafael/DeskcommCRM/branches/main/protection \
 ```
 
 `e2e` roda as partes da sua matrix em paralelo (quantas:
-`git show origin/main:.github/workflows/e2e.yml | grep -E '^ +parte: \['` — esta linha dizia
+`cat tests/fixtures/upstream-workflows/v1.113.0/e2e.yml | grep -E '^ +parte: \['` — esta linha dizia
 "três" até o PR #983 acrescentar a quarta); as specs de fora estão declaradas, **com motivo
-escrito**, em `FORA_DO_CI` dentro de `.github/workflows/e2e.yml`. Leia em vez de supor:
+escrito**, em `FORA_DO_CI` dentro de `tests/fixtures/upstream-workflows/v1.113.0/e2e.yml`. Leia em vez de supor:
 
 ```bash
-git show origin/main:.github/workflows/e2e.yml | grep -A4 'FORA_DO_CI:'
+cat tests/fixtures/upstream-workflows/v1.113.0/e2e.yml | grep -A4 'FORA_DO_CI:'
 ```
 
 ## Embedded Assistant Guides
@@ -327,7 +332,7 @@ server; segredo em query string; `throw` cru na borda da API.
   nenhum serviço de `docker-compose.prod.yml` constrói na máquina do cliente: todo serviço declara
   `image:` de imagem publicada, e `build:` existe só ao lado, como escape. Serviço `build:`-only é
   pulado por `docker compose pull` e **nunca é atualizado**. Publicação é ato do CI
-  (`.github/workflows/publish-image.yml`), nunca da sua máquina. Instalação aponta para número de
+  (`tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml`), nunca da sua máquina. Instalação aponta para número de
   versão; `latest` significa topo da `main`, a última release é `stable`. Dependência upstream é
   referenciada com tag fixa, nunca republicada (WAHA é licenciado). Bump de versão não pode exigir
   edição manual de arquivo na VPS.
@@ -409,7 +414,7 @@ cabeçalho passava a mentir por todos eles.
   já afirmou "menos uma" depois de deixarem de ser uma — por isso não conta mais. A issue #63,
   que originou a discussão, está **fechada** e o título dela descreve um estado que já não vale.
   Quantas existem: `ls tests/e2e/*.spec.ts | wc -l`. Quantas ficam fora:
-  `git show origin/main:.github/workflows/e2e.yml | grep -A4 'FORA_DO_CI:'`.
+  `cat tests/fixtures/upstream-workflows/v1.113.0/e2e.yml | grep -A4 'FORA_DO_CI:'`.
 **Antes de declarar pronto**, siga a **Definition of Done de [`CLAUDE.md`](CLAUDE.md)** — não
 confie na memória, conte lá:
 
@@ -437,7 +442,7 @@ itens envelhecem em ritmos diferentes, e o cabeçalho passava a mentir por todos
   fresca seguia sem gate, e em 2026-09-19 o #983 pôs `vps-fresh-onboarding.spec.ts` no CI.
 
   ```bash
-  git show origin/main:.github/workflows/e2e.yml | python3 -c "import sys,re; y=sys.stdin.read(); print(sorted({s for _,c in re.findall(r'(FORA_DO_CI):\s*>-\n((?:[ ]{8,}.*\n)+)',y) for s in re.findall(r'[a-z0-9-]+\.spec\.ts',c)}))"
+  cat tests/fixtures/upstream-workflows/v1.113.0/e2e.yml | python3 -c "import sys,re; y=sys.stdin.read(); print(sorted({s for _,c in re.findall(r'(FORA_DO_CI):\s*>-\n((?:[ ]{8,}.*\n)+)',y) for s in re.findall(r'[a-z0-9-]+\.spec\.ts',c)}))"
   ```
 
   Gate não substitui prova: se você mexeu numa jornada, a prova pela tela continua sendo sua

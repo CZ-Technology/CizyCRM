@@ -559,7 +559,8 @@ O Playwright é um robô que abre um navegador de verdade, clica e lê a tela co
 Neste projeto, ele é a **prova de que a experiência funciona** — chamada de API (`curl`) prova o
 servidor, não o que o usuário vê. Fonte da receita:
 [`receita-e2e-local.md`](../.agents/skills/deskcomm-contribuir/references/receita-e2e-local.md) e,
-acima dela, o próprio [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml).
+acima dela, o próprio [`tests/fixtures/upstream-workflows/v1.113.0/e2e.yml`](../tests/fixtures/upstream-workflows/v1.113.0/e2e.yml),
+que é [histórico e não está ativo neste fork](fork-ci.md).
 
 ### 10.1 Preparar (uma vez)
 
@@ -649,10 +650,9 @@ Regras do molde:
 - **Evidência** (prints) em `evidence/` — essa pasta vai para o git.
 - **Registre a jornada** em [`docs/testing/user-journey-map.md`](testing/user-journey-map.md), com a
   prioridade (`[P0]` é primeira impressão: login, onboarding, primeiro lead).
-- **Coloque a spec no CI**: acrescente o nome numa das listas `SPECS_PARTE_N` do
-  `.github/workflows/e2e.yml` — ou em `FORA_DO_CI`, com o motivo escrito, se ela depende de
-  WhatsApp, e-mail ou loja reais. O teste `tests/unit/e2e-cobertura-completa.test.ts` reprova spec
-  que não está em lugar nenhum.
+- **Cobertura E2E**: a fixture `tests/fixtures/upstream-workflows/v1.113.0/e2e.yml` guarda
+  a lista histórica; não a edite para fazer uma spec nova parecer executada. O fork ainda não
+  tem job E2E ativo. Registre a lacuna no PR e trate a ativação em revisão própria.
 - Rode `pnpm typecheck` depois: a spec também é TypeScript.
 
 Para descobrir seletores sem adivinhar, o gravador do Playwright escreve código enquanto você
@@ -793,7 +793,7 @@ CONTEXTO — DeskcommCRM (contribuição)
 - Features não nomeiam fornecedor (pnpm lint:channels). Marca vive no banco, não no código.
 - Verificações: pnpm cercas, typecheck, lint, lint:channels, test:unit (sem caminho; ler o rodapé),
   test:shell (kit/Docker), test:db (schema/RLS), build. Prova de UI = Playwright em ambiente fresco
-  (.env.e2e local), spec registrada em SPECS_PARTE_N do .github/workflows/e2e.yml.
+  (.env.e2e local), spec registrada em SPECS_PARTE_N do tests/fixtures/upstream-workflows/v1.113.0/e2e.yml.
 - Release: fragmento em .changes/<kebab>.md (impacto/secao/titulo); nunca editar versão no CHANGELOG.md.
 - Git: ramo novo a partir de upstream/main; nunca reset --hard, push --force ou rebase de commit publicado.
 - Antes de afirmar "funciona"/"passou": mostrar o comando e a saída. Declarar o que não foi medido.

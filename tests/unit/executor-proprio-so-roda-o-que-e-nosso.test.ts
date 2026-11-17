@@ -10,6 +10,11 @@
  *   2. O ROTEAMENTO nos nossos workflows: decide para quem não o edita. Só os
  *      jobs pesados vão para a máquina, e a publicação na `main` nunca vai —
  *      imagem que o parque instala se constrói nas máquinas do GitHub.
+ *
+ * Desde 12/11/2026 há um SEGUNDO executor, os runners da VPS (`deskcomm-vps`),
+ * e ele recebe só a matriz `invariants-majors`. O roteamento dele é vigiado
+ * aqui com a mesma régua; a guarda de entrada é o mesmo so-o-que-e-nosso.sh,
+ * instalado no `.env` de cada runner (fora do repositório).
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -21,15 +26,16 @@ import { describe, expect, it } from "vitest";
 const GUARDA = "infra/executor-proprio/so-o-que-e-nosso.sh";
 const REPO = "melgarafael/DeskcommCRM";
 
-function guarda(evento: string, payload: unknown, repo = REPO): number {
+function guarda(evento: string, payload: unknown, repo = REPO, ator = "melgarafael"): number {
   const dir = mkdtempSync(join(tmpdir(), "guarda-"));
   const caminho = join(dir, "evento.json");
   writeFileSync(caminho, typeof payload === "string" ? payload : JSON.stringify(payload));
   try {
     execFileSync("bash", [GUARDA], {
-      // Herda o ambiente (ProcessEnv exige NODE_ENV) e SOBRESCREVE as três que a
-      // guarda lê — no CI elas existem e descreveriam o job de verdade.
-      env: { ...process.env, GITHUB_REPOSITORY: repo, GITHUB_EVENT_NAME: evento, GITHUB_EVENT_PATH: caminho },
+      // Herda o ambiente (ProcessEnv exige NODE_ENV) e SOBRESCREVE as quatro que a
+      // guarda lê — no CI elas existem e descreveriam o job de verdade (num PR do
+      // dependabot, GITHUB_ACTOR já viria `dependabot[bot]`).
+      env: { ...process.env, GITHUB_REPOSITORY: repo, GITHUB_EVENT_NAME: evento, GITHUB_EVENT_PATH: caminho, GITHUB_ACTOR: ator },
       stdio: "pipe",
     });
     return 0;
@@ -63,6 +69,18 @@ describe("a guarda da máquina", () => {
     expect(guarda(evento, payload)).not.toBe(0);
   });
 
+  it.each(["dependabot[bot]", "github-actions[bot]", "renovate[bot]"])(
+    "recusa o bot %s mesmo com PR de branch deste repositório e com push",
+    (bot) => {
+      expect(guarda("pull_request", prDe(REPO), REPO, bot)).not.toBe(0);
+      expect(guarda("push", {}, REPO, bot)).not.toBe(0);
+    },
+  );
+
+  it("controle: o mesmo PR, de gente, passa", () => {
+    expect(guarda("pull_request", prDe(REPO), REPO, "webtecnica")).toBe(0);
+  });
+
   it("recusa outro repositório mesmo com evento aceito", () => {
     expect(guarda("push", {}, "alguem/OutroRepo")).not.toBe(0);
   });
@@ -78,12 +96,13 @@ describe("a guarda da máquina", () => {
 
 const TODOS =
   "${{ vars.EXECUTOR_PROPRIO == 'ligado' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && 'deskcomm-proprio' || 'ubuntu-latest' }}";
+const VPS =
+  "${{ vars.RUNNER_PROPRIO == 'ligado' && !endsWith(github.actor, '[bot]') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\",\"deskcomm-vps\"]') || 'ubuntu-latest' }}";
 const SO_PR =
   "${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || (vars.EXECUTOR_PROPRIO == 'ligado' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && 'deskcomm-proprio' || 'ubuntu-latest') }}";
 
 const ESPERADO: Record<string, string> = {
   "ci.yml::verify-parte": TODOS,
-  "ci.yml::invariants-majors": TODOS,
   "e2e.yml::e2e-parte": TODOS,
   "perf.yml::build-and-size": TODOS,
   "publish-image.yml::imagem-do-app-sobe": SO_PR,
@@ -94,10 +113,11 @@ const ESPERADO: Record<string, string> = {
 // último job de 2 espaços visto antes dele.
 function runsOnPorJob(): Map<string, string> {
   const mapa = new Map<string, string>();
-  for (const arquivo of readdirSync(".github/workflows").filter((a) => /\.ya?ml$/.test(a))) {
+  const dir = "tests/fixtures/upstream-workflows/v1.113.0";
+  for (const arquivo of readdirSync(dir).filter((a) => /\.ya?ml$/.test(a))) {
     let job = "";
     let emJobs = false;
-    for (const linha of readFileSync(`.github/workflows/${arquivo}`, "utf-8").split("\n")) {
+    for (const linha of readFileSync(`${dir}/${arquivo}`, "utf-8").split("\n")) {
       if (/^jobs:\s*$/.test(linha)) emJobs = true;
       const j = emJobs && linha.match(/^ {2}([a-zA-Z0-9_-]+):\s*$/);
       if (j) job = j[1]!;
@@ -121,6 +141,33 @@ describe("o roteamento dos workflows", () => {
     expect(naMaquina).toEqual(ESPERADO);
   });
 
+  it("só a matriz do banco vai para os runners da VPS, com a expressão declarada", () => {
+    const naVps = Object.fromEntries([...mapa].filter(([, v]) => v.includes("deskcomm-vps")));
+    expect(naVps).toEqual({ "ci.yml::invariants-majors": VPS });
+  });
+
+  it("o job na VPS usa um HOME do job e limpa os contêineres dele mesmo em falha", () => {
+    const ci = readFileSync("tests/fixtures/upstream-workflows/v1.113.0/ci.yml", "utf-8");
+    const job = ci.slice(ci.indexOf("\n  invariants-majors:\n"), ci.indexOf("\n  invariants:\n"));
+    expect(job.length, "não achei o job invariants-majors").toBeGreaterThan(100);
+    expect(job).toMatch(/if: runner\.environment == 'self-hosted'\n\s+run: \|[\s\S]*?casa="\$RUNNER_TEMP\/home"[\s\S]*?"HOME=\$casa" >> "\$GITHUB_ENV"/);
+    expect(job).toMatch(
+      /if: always\(\) && runner\.environment == 'self-hosted'\n\s+run: \|\n\s+ids="\$\(docker ps -aq --filter "label=deskcomm\.worktree=\$GITHUB_WORKSPACE"\)"/,
+    );
+    // O filtro só limpa o que os scripts rotulam: os dois têm de rotular.
+    for (const script of ["scripts/test-db.sh", "scripts/test-update-com-dados.sh"]) {
+      expect(readFileSync(script, "utf-8"), script).toMatch(/--label "deskcomm\.worktree=\$(ROOT|DONO_WORKTREE)"/);
+    }
+  });
+
+  it("o gancho de saída limpa pelo MESMO rótulo que os scripts gravam", () => {
+    const gancho = readFileSync("infra/executor-proprio/limpa-depois.sh", "utf-8");
+    expect(gancho).toContain('--filter "label=deskcomm.worktree=${GITHUB_WORKSPACE}"');
+    // Rótulo por run/job apagaria a outra perna da matriz, que roda ao mesmo
+    // tempo no outro runner com o mesmo GITHUB_RUN_ID e GITHUB_JOB.
+    expect(gancho).not.toMatch(/label=[^"]*GITHUB_RUN_ID/);
+  });
+
   it("publica cada arquitetura em runner nativo do GitHub", () => {
     expect(mapa.get("publish-image.yml::build-and-push")).toBe(
       "${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}",
@@ -130,7 +177,9 @@ describe("o roteamento dos workflows", () => {
   it("nenhum workflow com pull_request_target manda job para a máquina", () => {
     for (const arquivo of readdirSync(".github/workflows")) {
       const texto = readFileSync(`.github/workflows/${arquivo}`, "utf-8");
-      if (/^\s+pull_request_target:/m.test(texto)) expect(texto, arquivo).not.toContain("deskcomm-proprio");
+      if (!/^\s+pull_request_target:/m.test(texto)) continue;
+      expect(texto, arquivo).not.toContain("deskcomm-proprio");
+      expect(texto, arquivo).not.toContain("deskcomm-vps");
     }
   });
 });

@@ -37,7 +37,9 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-const DIR_WORKFLOWS = join(process.cwd(), ".github/workflows");
+// Contrato histórico do upstream, preservado como fixture; o workflow ativo
+// do fork é medido separadamente por fork-ci-contract.test.ts.
+const DIR_WORKFLOWS = join(process.cwd(), "tests/fixtures/upstream-workflows/v1.113.0");
 const ACTION = join(process.cwd(), ".github/actions/preparar-node/action.yml");
 
 /**

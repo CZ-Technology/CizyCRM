@@ -6,7 +6,7 @@
 // que o Next chegue a "Ready" — o app sobe, a extração só morre quando alguém manda um
 // PDF. O que faltava era medir a extração DENTRO da imagem, pelo módulo EMPACOTADO.
 //
-// A guarda é `.github/workflows/publish-image.yml` (passo "A imagem extrai texto de
+// A guarda é `tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml` (passo "A imagem extrai texto de
 // PDF?") + `scripts/sonda-pdf-na-imagem.mjs`. Aqui a sonda é executada DE VERDADE,
 // como processo, contra um layout sintético que reproduz a FORMA do defeito: um chunk
 // registrado no runtime do Turbopack (mesmo contrato `c(chunk)`/`m(id)` do runtime
@@ -175,7 +175,7 @@ describe("scripts/sonda-pdf-na-imagem.mjs", () => {
   });
 
   it("está no job que sobe a imagem do app, rodando dentro da imagem construída", () => {
-    const linhas = readFileSync(join(raiz, ".github/workflows/publish-image.yml"), "utf8").split("\n");
+    const linhas = readFileSync(join(raiz, "tests/fixtures/upstream-workflows/v1.113.0/publish-image.yml"), "utf8").split("\n");
 
     // O job inteiro: de `imagem-do-app-sobe:` até o próximo job (mesma indentação).
     const inicio = linhas.findIndex((linha) => linha.startsWith("  imagem-do-app-sobe:"));
